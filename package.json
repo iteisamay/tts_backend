@@ -1,0 +1,30 @@
+{
+  "name": "text-to-speech-backend",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "Subhradip Majumder",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "@aws-sdk/client-polly": "^3.918.0",
+    "@aws-sdk/client-s3": "^3.918.0",
+    "@aws-sdk/s3-request-presigner": "^3.918.0",
+    "@google-cloud/text-to-speech": "^6.4.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "pg": "^8.16.3",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.34.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  }
+}
