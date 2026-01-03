@@ -25,7 +25,7 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const UPLOAD_BASE_PATH = path.join(__dirname, '..', 'uploads');
-app.use('/qr', express.static(path.join(UPLOAD_BASE_PATH, 'qr'),{
+app.use('/s1/qr', express.static(path.join(UPLOAD_BASE_PATH, 'qr'),{
   etag: false,
   lastModified: false,
   setHeaders: (res, path) => {
@@ -33,7 +33,7 @@ app.use('/qr', express.static(path.join(UPLOAD_BASE_PATH, 'qr'),{
   }
 }));
 
-app.use('/audio', express.static(path.join(UPLOAD_BASE_PATH, 'audios'), {
+app.use('/s1/audio', express.static(path.join(UPLOAD_BASE_PATH, 'audios'), {
   etag: false,
   lastModified: false,
   setHeaders: (res, path) => {
@@ -41,7 +41,7 @@ app.use('/audio', express.static(path.join(UPLOAD_BASE_PATH, 'audios'), {
   }
 }));
 
-app.use('/images', express.static(path.join(UPLOAD_BASE_PATH, 'images'),{
+app.use('/s1/images', express.static(path.join(UPLOAD_BASE_PATH, 'images'),{
   etag: false,
   lastModified: false,
   setHeaders: (res, path) => {
