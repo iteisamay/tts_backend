@@ -1,6 +1,43 @@
 import express from 'express';
-import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech } from '../controller/ttsController-gcp.js';
+import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById } from '../controller/ttsController-gcp.js';
+import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
 const ttsRouter = express.Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const UPLOAD_BASE_PATH = path.join(__dirname, '..','..', 'uploads');
+
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        let subFolder = '';
+        if (file.fieldname === 'qr') {
+            subFolder = 'qr';
+        } else if (file.fieldname === 'audio') {
+            subFolder = 'audios';
+        }else if (file.fieldname === 'thumbnail'){
+            subFolder='images';
+        }
+        const finalPath = path.join(UPLOAD_BASE_PATH, subFolder);
+        if (!fs.existsSync(finalPath)) {
+            fs.mkdirSync(finalPath, { recursive: true });
+        }
+        cb(null, finalPath);
+    },
+    filename: function (req, file, cb) {
+        console.log(file);
+        const uniqueSuffix = Date.now() + '_' + Math.round(Math.random() * 1E5);
+        if(file.fieldname==='thumbnail'){
+            cb(null, uniqueSuffix +path.extname(file.originalname));
+        }else{
+            cb(null, uniqueSuffix + '.mp3');
+        }
+    }
+});
+
+const upload=multer({storage});
 
 ttsRouter.post('/create', createTts);
 ttsRouter.get('/get-audio-presigned-url', getAudioPresignedUrl);
@@ -9,7 +46,16 @@ ttsRouter.post('/create-speech-only', createSpeechOnly);
 ttsRouter.post('/save', saveTtsToDb);
 // ttsRouter.post('/save-speech-to-db', saveSpeechToDb);
 ttsRouter.post('/get', getPaginatedTtsRecords);
-ttsRouter.post('/update', updateTtsSpeech);
+// ttsRouter.post('/update', updateTtsSpeech);
 ttsRouter.get('/download-proxy', downloadProxy);
 ttsRouter.post('/add/custom', saveCustomSpeech);
+ttsRouter.get('/get/custom', getCustom);
+
+//bare metal 
+ttsRouter.post('/store',upload.any(),storeInMechine);
+ttsRouter.post('/update',upload.any(), updateTtsSpeechv2);
+ttsRouter.post('/image-upload',upload.any(),uploadImage);
+ttsRouter.post('/update-data',updateDataByRowId);
+
+ttsRouter.get('/get/:id',getAudioDataById);
 export default ttsRouter;
