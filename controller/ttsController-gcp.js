@@ -700,7 +700,6 @@ const storeInMechine = async (req, res) => {
   try {
     const audioFilename = req.files[0]['filename'];
     // const audioLink = `${process.env.BACKEND_PORTAL}/audio/${audioFilename}`;
-    const audioLink = `${audioFilename}`;
     const audioFilePath = req.files[0]['path'];
     const audioMetadata = await parseFile(audioFilePath);
     const duration = formatToISODuration(audioMetadata.format.duration);
@@ -709,9 +708,8 @@ const storeInMechine = async (req, res) => {
     const QR_LINK = `${process.env.USER_PORTAL}/audio/${nextId}`;
     const qrBuffer = await generateCmykQr(QR_LINK);
     let { fileName } = await saveQRImage(qrBuffer, title);
-    let qrUrl = `${process.env.BACKEND_PORTAL}/qr/${fileName}`;
-    const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,audio_url,qr_key,qr_url,duration) values ($1,$2,$3,$4,$5,$6,$7,$8);";
-    await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, audioLink, fileName, qrUrl, duration]);
+    const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,qr_key,duration) values ($1,$2,$3,$4,$5,$6);";
+    await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration]);
     return res.status(200).send({ msg: "Audio saved and QR Code created." });
   } catch (error) {
     console.log(error);
