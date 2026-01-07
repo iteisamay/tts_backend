@@ -27,7 +27,6 @@ const storage = multer.diskStorage({
         cb(null, finalPath);
     },
     filename: function (req, file, cb) {
-        console.log(file);
         const uniqueSuffix = Date.now() + '_' + Math.round(Math.random() * 1E5);
         if(file.fieldname==='thumbnail'){
             cb(null, uniqueSuffix +path.extname(file.originalname));

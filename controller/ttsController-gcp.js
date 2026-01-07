@@ -10,6 +10,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import example from "../utils/exampleResponse.js";
 import { parseFile } from 'music-metadata';
 import { configDotenv } from "dotenv";
+import fsp from 'fs/promises';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -500,7 +501,7 @@ const updateTtsSpeechv2 = async (req, res) => {
       [id]
     );
     if (rows.length === 0) {
-      await fs.unlink(newFilePath).catch(() => { });
+      await fsp.unlink(newFilePath).catch(() => { });
       return res.status(404).send("Record not found");
     }
     const oldFileName = rows[0]["audio_key"];
@@ -516,13 +517,13 @@ const updateTtsSpeechv2 = async (req, res) => {
       [text, id]
     );
     if (rowCount == 0) {
-      await fs.unlink(newFilePath).catch(() => { });
+      await fsp.unlink(newFilePath).catch(() => { });
       return res.status(500).send({ msg: 'Error: ' + error.message });
     }
     return res.status(200).send({ msg: "Audio updated successfully." });
   } catch (error) {
     console.error("FileSystem Error:", error);
-    await fs.unlink(newFilePath).catch(() => { });
+    await fsp.unlink(newFilePath).catch(() => { });
     return res.status(500).send({ msg: 'Error: ' + error.message });
   }
 };
@@ -534,44 +535,36 @@ const updateTtsSpeechv2 = async (req, res) => {
  * Proxy download endpoint to bypass CORS restrictions
  */
 const downloadProxy = async (req, res) => {
-  const { url, filename } = req.query;
+  const { filename } = req.query;
 
   try {
-    if (!url) {
-      return res.status(400).json({ error: 'URL parameter is required' });
+    // 1. Construct the absolute path to the file
+    // Adjust the path to match your CentOS folder structure
+    const filePath = path.join(__dirname, "..", "..", "uploads", "qr", filename);
+
+    // 2. Security Check: Ensure the file actually exists
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found on server' });
     }
 
-    const response = await fetch(url);
+    // 3. Sanitize filename for the browser download dialog
+    const sanitizedFilename = filename.replace(/[\r\n\t]/g, '_').trim();
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch resource: ${response.statusText}`);
-    }
-
-    const contentType =
-      response.headers.get('content-type') || 'application/octet-stream';
-
-    const sanitizedFilename = filename
-      ? filename.replace(/[\r\n\t]/g, '').trim()
-      : 'download';
-
-    const encodedFilename = encodeURIComponent(sanitizedFilename);
-
-    // ✅ FORCE DOWNLOAD DIALOG
-    res.setHeader('Content-Type', contentType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="file"; filename*=UTF-8''${encodedFilename}`
-    );
-
-    // Stream response
-    const buffer = await response.arrayBuffer();
-    res.send(Buffer.from(buffer));
+    // 4. Send the file
+    // res.download sets Content-Disposition and Content-Type automatically
+    res.download(filePath, sanitizedFilename, (err) => {
+      if (err) {
+        console.error("Error during download transfer:", err);
+        // Don't try to send another response if headers were already sent
+        if (!res.headersSent) {
+          res.status(500).send("Error downloading file");
+        }
+      }
+    });
 
   } catch (error) {
     console.error('Download proxy error:', error);
-    res.status(500).json({
-      error: 'Failed to download file: ' + error.message
-    });
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 };
 
@@ -699,7 +692,6 @@ const storeInMechine = async (req, res) => {
   const { title, text } = req.body;
   try {
     const audioFilename = req.files[0]['filename'];
-    // const audioLink = `${process.env.BACKEND_PORTAL}/audio/${audioFilename}`;
     const audioFilePath = req.files[0]['path'];
     const audioMetadata = await parseFile(audioFilePath);
     const duration = formatToISODuration(audioMetadata.format.duration);
@@ -717,18 +709,14 @@ const storeInMechine = async (req, res) => {
   }
 }
 
-const saveQRImage = async (buffer, buffername, namePrefix = 'qr') => {
+const saveQRImage = async (buffer, buffername) => {
   try {
-    // 1. Ensure the folder exists
-    await fs.mkdir(QR_FOLDER, { recursive: true }, (e) => { console.log(e); });
-
-    // 2. Create a unique filename
-    const fileName = `${buffername}.jpg`;
+    await fsp.mkdir(QR_FOLDER, { recursive: true });
+    const safeName = buffername.trim().replace(/[\\/:*?"<>|]/g, "_");
+    const finalName = safeName || `qr-${Date.now()}`;
+    const fileName = `${finalName}.jpg`;
     const filePath = path.join(QR_FOLDER, fileName);
-
-    // 3. Write the buffer to the file
-    await fs.writeFile(filePath, buffer, (e) => { e });
-
+    await fsp.writeFile(filePath, buffer);
     return {
       success: true,
       fileName: fileName,
