@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { formatLocalISO } from "../utils/utils.js";
+import createAdminLog from "../utils/logWriter.js";
 configDotenv()
 
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -129,7 +130,8 @@ const createSpeechOnly = async (req, res) => {
     language = "bn-IN",
     voice = "bn-IN-Wavenet-A",
     speakingRate = 1.0,
-    pitch = 0.0
+    pitch = 0.0,
+    user_code='test'
   } = req.body;
 
   try {
@@ -163,7 +165,7 @@ const createSpeechOnly = async (req, res) => {
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", finalAudio.length);
     res.setHeader("Content-Disposition", "inline; filename=tts.mp3");
-
+    createAdminLog("TEXT TO SPEACH GENERATED",user_code);
     return res.send(finalAudio);
 
   } catch (err) {
@@ -490,7 +492,7 @@ const updateTtsSpeech = async (req, res) => {
 */
 const updateTtsSpeechv2 = async (req, res) => {
   /** @type {{text:String,title:String,id:String}} */
-  const { text, id } = req.body;
+  const { text, id,user_code='test' } = req.body;
   if (!req.files || req.files.length === 0) {
     return res.status(400).send({ msg: "No audio file uploaded." });
   }
@@ -520,6 +522,7 @@ const updateTtsSpeechv2 = async (req, res) => {
       await fsp.unlink(newFilePath).catch(() => { });
       return res.status(500).send({ msg: 'Error: ' + error.message });
     }
+    createAdminLog(`TTS RECORD UPDATED ID: ${id}`,user_code);
     return res.status(200).send({ msg: "Audio updated successfully." });
   } catch (error) {
     console.error("FileSystem Error:", error);
@@ -535,7 +538,7 @@ const updateTtsSpeechv2 = async (req, res) => {
  * Proxy download endpoint to bypass CORS restrictions
  */
 const downloadProxy = async (req, res) => {
-  const { filename } = req.query;
+  const { filename,user_code='test' } = req.query;
 
   try {
     // 1. Construct the absolute path to the file
@@ -561,6 +564,7 @@ const downloadProxy = async (req, res) => {
         }
       }
     });
+    createAdminLog(`FILE DOWNLOADED,${filename}`,user_code);
 
   } catch (error) {
     console.error('Download proxy error:', error);
@@ -575,10 +579,11 @@ const downloadProxy = async (req, res) => {
 */
 const saveCustomSpeech = async (req, res) => {
   /** @type {{word:String ,speech:String}} */
-  const { word, speech } = req.body;
+  const { word, speech,user_code='test' } = req.body;
   const insertQuery = 'INSERT INTO tts_custom (word, speech) VALUES ($1, $2) RETURNING *';
   try {
     const result = await pgClient.query(insertQuery, [word, speech]);
+    createAdminLog(`CUSTOM SPEECH ADDED ${word}->${speech}`,user_code);
     return res.status(200).send({ msg: 'Custom speech saved successfully', data: result.rows });
   } catch (error) {
     console.log(error);
@@ -689,7 +694,7 @@ const getCustom = async (req, res) => {
 */
 const storeInMechine = async (req, res) => {
   /** @type {{title:String,text:String,}} */
-  const { title, text } = req.body;
+  const { title, text,user_code='test' } = req.body;
   try {
     const audioFilename = req.files[0]['filename'];
     const audioFilePath = req.files[0]['path'];
@@ -702,6 +707,7 @@ const storeInMechine = async (req, res) => {
     let { fileName } = await saveQRImage(qrBuffer, title.substring(0,50));
     const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,qr_key,duration) values ($1,$2,$3,$4,$5,$6);";
     await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration]);
+    createAdminLog(`NEW TTS RECORD STORED TITLE->${title}`,user_code);
     return res.status(200).send({ msg: "Audio saved and QR Code created." });
   } catch (error) {
     console.log(error);
@@ -754,7 +760,7 @@ const formatToISODuration = (durationInSeconds) => {
 */
 const uploadImage = async (req, res) => {
   /** @type {{id:String}} */
-  const { id } = req.body;
+  const { id,user_code='test' } = req.body;
   const imageFilename = req.files[0]['filename'];
   try {
     const updateaudioData = "update tbl_tts_record set thumbnail=$1 where tts_id=$2;";
@@ -762,6 +768,7 @@ const uploadImage = async (req, res) => {
     if (rowCount == 0) {
       return res.status(500).send({ msg: "Error occure while updateing database." });
     }
+    createAdminLog(`IMAGE THUMBNAIL UPDATED: ${id}`,user_code);
     return res.status(200).send({ msg: "File uploaded.", imageFilename });
   } catch (error) {
     console.log(error);
@@ -777,7 +784,7 @@ const uploadImage = async (req, res) => {
 */
 const updateDataByRowId = async (req, res) => {
   /** @type {{title:String,desc:String,alt_text:String,keywords:String,id:String}} */
-  const { title, desc, alt_text, keywords, id } = req.body;
+  const { title, desc, alt_text, keywords, id,user_code='test' } = req.body;
   const currentDatetime = formatLocalISO(new Date());
   const updateQ = "update tbl_tts_record set title=$1,description=$2,thumbnail_alt=$3,keywords=$4,tts_mod_time=$5 where tts_id=$6";
   try {
@@ -785,6 +792,7 @@ const updateDataByRowId = async (req, res) => {
     if (rowCount == 0) {
       return res.status(500).send({ msg: "Data not updated." });
     }
+    createAdminLog(`META DATA UPDATED ID: ${id}`,user_code);
     return res.status(200).send({ msg: "Data updated" });
   } catch (error) {
     console.log(error);

@@ -1,4 +1,5 @@
 import pgClient from '../db/pgClient.js';
+import createAdminLog from '../utils/logWriter.js';
 
 /**
  * Creates a user with login details using PostgreSQL transaction
@@ -6,7 +7,7 @@ import pgClient from '../db/pgClient.js';
  * @param {import('express').Response} res
  */
 const createUser = async (req, res) => {
-    const { email, emp_code, password, user_type } = req.body;
+    const { email, emp_code, password, user_type,user_code='test' } = req.body;
 
     if (!email || !emp_code || !password || !user_type) {
         return res.status(400).send({ msg: "Please provide all fields." });
@@ -32,7 +33,7 @@ const createUser = async (req, res) => {
             password
         ]);
         await pgClient.query('COMMIT');
-
+        createAdminLog(`NEW USER CREATED EMPCODE:${emp_code}`,user_code);
         return res.status(201).send({ msg: 'User created successfully' });
 
     } catch (error) {
@@ -89,7 +90,7 @@ const userLogin = async (req, res) => {
 
         // Remove password before sending response
         delete user.password;
-
+        createAdminLog(`USER LOGGED IN ID`,user.user_empcode);
         return res.status(200).json({
             msg: 'Login successful',
             user
