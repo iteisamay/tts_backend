@@ -4,7 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { verifyAction, verifySuperAdmin } from '../middlewares/veriFication.js';
+import { verifyAction, verifySuperAdmin } from '../middlewares/verification.js';
 
 const ttsRouter = express.Router();
 const __filename = fileURLToPath(import.meta.url);
