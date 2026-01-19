@@ -8,6 +8,7 @@ import authRouter from "./router/authRouter.js";
 import pgClient from "./db/pgClient.js";
 import { fileURLToPath } from 'url';
 import path from 'path';
+import "./utils/cronJobs.js"
 
 configDotenv();
 

@@ -1,9 +1,10 @@
 import express from 'express';
-import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById } from '../controller/ttsController-gcp.js';
+import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst,createTts_forUpdate,getQrAudioByFrontendKey,getTodaysData,deleteAudioById, getUserData, toogleUserAccessById } from '../controller/ttsController-gcp.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { verifyAction, verifySuperAdmin } from '../middlewares/veriFication.js';
 
 const ttsRouter = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -39,22 +40,36 @@ const storage = multer.diskStorage({
 const upload=multer({storage});
 
 ttsRouter.post('/create', createTts);
+
+//front end portal API's
+ttsRouter.post('/generate-first',verifyAction,createTts_forFirst);
+ttsRouter.post('/generate-update',verifyAction, createTts_forUpdate);
+ttsRouter.post('/get-qr-audio',verifyAction, getQrAudioByFrontendKey);
+ttsRouter.post('/get/today',verifyAction, getTodaysData);
+ttsRouter.delete('/delete',verifyAction, deleteAudioById);
+
+
+
 ttsRouter.get('/get-audio-presigned-url', getAudioPresignedUrl);
 ttsRouter.post('/finalize', finalizeTts);
-ttsRouter.post('/create-speech-only', createSpeechOnly);
+ttsRouter.post('/create-speech-only',verifyAction, createSpeechOnly);
 ttsRouter.post('/save', saveTtsToDb);
 // ttsRouter.post('/save-speech-to-db', saveSpeechToDb);
 ttsRouter.post('/get', getPaginatedTtsRecords);
 // ttsRouter.post('/update', updateTtsSpeech);
 ttsRouter.get('/download-proxy', downloadProxy);
-ttsRouter.post('/add/custom', saveCustomSpeech);
+ttsRouter.post('/add/custom',verifyAction, saveCustomSpeech);
 ttsRouter.get('/get/custom', getCustom);
 
 //bare metal 
 ttsRouter.post('/store',upload.any(),storeInMechine);
-ttsRouter.post('/update',upload.any(), updateTtsSpeechv2);
+ttsRouter.post('/update',upload.any(),verifyAction, updateTtsSpeechv2);
 ttsRouter.post('/image-upload',upload.any(),uploadImage);
 ttsRouter.post('/update-data',updateDataByRowId);
 
 ttsRouter.get('/get/:id',getAudioDataById);
+
+ttsRouter.post('/get/userdata',verifyAction,getUserData)
+ttsRouter.post('/toggle/user/access',verifyAction,toogleUserAccessById)
+
 export default ttsRouter;

@@ -124,6 +124,89 @@ const createTts = async (req, res) => {
   // return res.json(example);
 };
 
+const createTts_forFirst = async (req, res) => {
+  const { title, text, user_code = 'test', pk_frontend } = req.body;
+  if (!title || title.trim() == "" || !text || text.trim() == "") {
+    return res.status(500).send({ msg: "Please provide valid data." });
+  }
+  const insertQ = 'insert into tbl_tts_record(tts_id,title,tts_text,frontend_pk) values ($1,$2,$3,$4);'
+  try {
+    const nextId = await getNextVal();
+    const tts_id = `TTS${nextId}`;
+    const { rows } = await pgClient.query(insertQ, [tts_id, title, text, pk_frontend]);
+    createAdminLog(`NEW STORY UPLOADED ID: ${tts_id}`, user_code);
+    console.log(rows);
+    return res.status(200).send({ msg: "Data Submitted for qr generation." });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: err.message || "server error" });
+  }
+
+  // await new Promise(resolve => setTimeout(resolve, 1000));
+  // return res.json(example);
+};
+
+
+const createTts_forUpdate = async (req, res) => {
+  const { title, text, user_code = 'test', pk_frontend } = req.body;
+  if (!pk_frontend || !title?.trim() || !text?.trim()) {
+    return res.status(400).send({ msg: "Please provide valid data." }); // 400 is better for validation errors
+  }
+  const updateQ = `
+    UPDATE tbl_tts_record 
+    SET title = $1, 
+        tts_text = $2, 
+        tts_generated = $3, 
+        tts_mod_time = NOW() 
+    WHERE frontend_pk = $4 
+    RETURNING tts_id;`;
+
+  try {
+    const { rows } = await pgClient.query(updateQ, [title, text, 'NEED UPDATE', pk_frontend]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: "Record not found with provided ID." });
+    }
+    const id = rows[0].tts_id;
+    await createAdminLog(`STORY UPDATED ID: ${id}`, user_code);
+    return res.status(200).send({
+      msg: "Data Submitted for story update.",
+      tts_id: id
+    });
+  } catch (err) {
+    console.error("Database Error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+};
+
+/**
+ * Saves Text-to-Speech data to the database
+ * @param {import('express').Request} req - Express request
+ * @param {import('express').Response} res - Express response
+ */
+const getQrAudioByFrontendKey = async (req, res) => {
+  const { id } = req.body;
+  if (!id || isNaN(id)) {
+    return res.status(500).send({ msg: "Invalid ID." });
+  }
+
+  const getDataQ = "select audio_key,qr_key from tbl_tts_record where frontend_pk = $1 and tts_generated='YES';";
+  try {
+    const { rows, rowCount } = await pgClient.query(getDataQ, [id]);
+    if (rowCount == 0) {
+      return res.status(500).send({ msg: "Invalid ID.",data:null });
+    }
+    const audioKey = `${process.env.BACKEND_ASSET_PORTAL}/audio/${rows[0]["audio_key"]}`;
+    const qrKey = `${process.env.BACKEND_ASSET_PORTAL}/qr/${rows[0]["qr_key"]}`;
+    console.log({ audioKey, qrKey });
+    return res.status(200).send({ data: { audioKey, qrKey } });
+  } catch (error) {
+    return res.status(500).send({ msg: "Error: " + error });
+  }
+
+}
+
+
+
 const createSpeechOnly = async (req, res) => {
   const {
     text,
@@ -131,7 +214,7 @@ const createSpeechOnly = async (req, res) => {
     voice = "bn-IN-Wavenet-A",
     speakingRate = 1.0,
     pitch = 0.0,
-    user_code='test'
+    user_code = 'test'
   } = req.body;
 
   try {
@@ -165,8 +248,53 @@ const createSpeechOnly = async (req, res) => {
     res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", finalAudio.length);
     res.setHeader("Content-Disposition", "inline; filename=tts.mp3");
-    createAdminLog("TEXT TO SPEACH GENERATED",user_code);
+    createAdminLog("TEXT TO SPEECH GENERATED", user_code);
     return res.send(finalAudio);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || "TTS failed" });
+  }
+};
+
+const createSpeechOnlyForCron = async (text) => {
+  const data = {
+    text: text,
+    language: "bn-IN",
+    voice: "bn-IN-Wavenet-A",
+    speakingRate: 1.0,
+    pitch: 0.0,
+    user_code: 'system'
+  };
+
+  try {
+    const chunks = chunkText(data.text);
+    const audioBuffers = [];
+
+    for (const chunk of chunks) {
+      const processedText = await applyCustomPronunciation(chunk);
+      const ssmlPayload = `<speak>${processedText}</speak>`;
+      const [response] = await gcpTTSClient.synthesizeSpeech({
+        input: { ssml: ssmlPayload },
+        voice: {
+          languageCode: data.language,
+          name: data.voice
+        },
+        audioConfig: {
+          audioEncoding: "MP3",
+          speakingRate: data.speakingRate,
+          pitch: data.pitch
+        }
+      });
+      const buffer = Buffer.isBuffer(response.audioContent)
+        ? response.audioContent
+        : Buffer.from(response.audioContent, "base64");
+
+      audioBuffers.push(buffer);
+    }
+
+    const finalAudio = Buffer.concat(audioBuffers);
+    return finalAudio;
 
   } catch (err) {
     console.error(err);
@@ -492,7 +620,7 @@ const updateTtsSpeech = async (req, res) => {
 */
 const updateTtsSpeechv2 = async (req, res) => {
   /** @type {{text:String,title:String,id:String}} */
-  const { text, id,user_code='test' } = req.body;
+  const { text, id, user_code = 'test' } = req.body;
   if (!req.files || req.files.length === 0) {
     return res.status(400).send({ msg: "No audio file uploaded." });
   }
@@ -522,7 +650,7 @@ const updateTtsSpeechv2 = async (req, res) => {
       await fsp.unlink(newFilePath).catch(() => { });
       return res.status(500).send({ msg: 'Error: ' + error.message });
     }
-    createAdminLog(`TTS RECORD UPDATED ID: ${id}`,user_code);
+    createAdminLog(`TTS RECORD UPDATED ID: ${id}`, user_code);
     return res.status(200).send({ msg: "Audio updated successfully." });
   } catch (error) {
     console.error("FileSystem Error:", error);
@@ -538,33 +666,23 @@ const updateTtsSpeechv2 = async (req, res) => {
  * Proxy download endpoint to bypass CORS restrictions
  */
 const downloadProxy = async (req, res) => {
-  const { filename,user_code='test' } = req.query;
+  const { filename, user_code = 'test' } = req.query;
 
   try {
-    // 1. Construct the absolute path to the file
-    // Adjust the path to match your CentOS folder structure
     const filePath = path.join(__dirname, "..", "..", "uploads", "qr", filename);
-
-    // 2. Security Check: Ensure the file actually exists
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'File not found on server' });
     }
-
-    // 3. Sanitize filename for the browser download dialog
     const sanitizedFilename = filename.replace(/[\r\n\t]/g, '_').trim();
-
-    // 4. Send the file
-    // res.download sets Content-Disposition and Content-Type automatically
     res.download(filePath, sanitizedFilename, (err) => {
       if (err) {
         console.error("Error during download transfer:", err);
-        // Don't try to send another response if headers were already sent
         if (!res.headersSent) {
           res.status(500).send("Error downloading file");
         }
       }
     });
-    createAdminLog(`FILE DOWNLOADED,${filename}`,user_code);
+    createAdminLog(`QR CODE FILE DOWNLOADED FILE NAME-> ${filename}`, user_code);
 
   } catch (error) {
     console.error('Download proxy error:', error);
@@ -579,11 +697,11 @@ const downloadProxy = async (req, res) => {
 */
 const saveCustomSpeech = async (req, res) => {
   /** @type {{word:String ,speech:String}} */
-  const { word, speech,user_code='test' } = req.body;
+  const { word, speech, user_code = 'test' } = req.body;
   const insertQuery = 'INSERT INTO tts_custom (word, speech) VALUES ($1, $2) RETURNING *';
   try {
     const result = await pgClient.query(insertQuery, [word, speech]);
-    createAdminLog(`CUSTOM SPEECH ADDED ${word}->${speech}`,user_code);
+    createAdminLog(`CUSTOM SPEECH ADDED ${word}->${speech}`, user_code);
     return res.status(200).send({ msg: 'Custom speech saved successfully', data: result.rows });
   } catch (error) {
     console.log(error);
@@ -694,7 +812,7 @@ const getCustom = async (req, res) => {
 */
 const storeInMechine = async (req, res) => {
   /** @type {{title:String,text:String,}} */
-  const { title, text,user_code='test' } = req.body;
+  const { title, text, user_code = 'test' } = req.body;
   try {
     const audioFilename = req.files[0]['filename'];
     const audioFilePath = req.files[0]['path'];
@@ -704,10 +822,10 @@ const storeInMechine = async (req, res) => {
     const nextTtsId = `TTS${nextId}`;
     const QR_LINK = `${process.env.USER_PORTAL}/audio/${nextId}`;
     const qrBuffer = await generateCmykQr(QR_LINK);
-    let { fileName } = await saveQRImage(qrBuffer, title.substring(0,50));
+    let { fileName } = await saveQRImage(qrBuffer, title.substring(0, 50));
     const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,qr_key,duration) values ($1,$2,$3,$4,$5,$6);";
     await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration]);
-    createAdminLog(`NEW TTS RECORD STORED TITLE->${title}`,user_code);
+    createAdminLog(`NEW TTS RECORD STORED TITLE->${title}`, user_code);
     return res.status(200).send({ msg: "Audio saved and QR Code created." });
   } catch (error) {
     console.log(error);
@@ -760,7 +878,7 @@ const formatToISODuration = (durationInSeconds) => {
 */
 const uploadImage = async (req, res) => {
   /** @type {{id:String}} */
-  const { id,user_code='test' } = req.body;
+  const { id, user_code = 'test' } = req.body;
   const imageFilename = req.files[0]['filename'];
   try {
     const updateaudioData = "update tbl_tts_record set thumbnail=$1 where tts_id=$2;";
@@ -768,7 +886,7 @@ const uploadImage = async (req, res) => {
     if (rowCount == 0) {
       return res.status(500).send({ msg: "Error occure while updateing database." });
     }
-    createAdminLog(`IMAGE THUMBNAIL UPDATED: ${id}`,user_code);
+    createAdminLog(`IMAGE THUMBNAIL UPDATED: ${id}`, user_code);
     return res.status(200).send({ msg: "File uploaded.", imageFilename });
   } catch (error) {
     console.log(error);
@@ -784,7 +902,7 @@ const uploadImage = async (req, res) => {
 */
 const updateDataByRowId = async (req, res) => {
   /** @type {{title:String,desc:String,alt_text:String,keywords:String,id:String}} */
-  const { title, desc, alt_text, keywords, id,user_code='test' } = req.body;
+  const { title, desc, alt_text, keywords, id, user_code = 'test' } = req.body;
   const currentDatetime = formatLocalISO(new Date());
   const updateQ = "update tbl_tts_record set title=$1,description=$2,thumbnail_alt=$3,keywords=$4,tts_mod_time=$5 where tts_id=$6";
   try {
@@ -792,7 +910,7 @@ const updateDataByRowId = async (req, res) => {
     if (rowCount == 0) {
       return res.status(500).send({ msg: "Data not updated." });
     }
-    createAdminLog(`META DATA UPDATED ID: ${id}`,user_code);
+    createAdminLog(`META DATA UPDATED ID: ${id}`, user_code);
     return res.status(200).send({ msg: "Data updated" });
   } catch (error) {
     console.log(error);
@@ -808,16 +926,118 @@ const updateDataByRowId = async (req, res) => {
 const getAudioDataById = async (req, res) => {
   /** @type {{parameter:Datatype}} */
   const { id } = req.params;
-  let rowId=`TTS${id}`;
+  let rowId = `TTS${id}`;
   try {
-    const seletcQ='select * from tbl_tts_record where tts_id=$1;';
-    const {rows,rowCount}=await pgClient.query(seletcQ,[rowId]);
-    if(rowCount!=1){
-      return res.status(500).send({msg:"Id does not exist."});
+    const seletcQ = 'select * from tbl_tts_record where tts_id=$1;';
+    const { rows, rowCount } = await pgClient.query(seletcQ, [rowId]);
+    if (rowCount != 1) {
+      return res.status(500).send({ msg: "Id does not exist." });
     }
-    return res.status(200).send({msg:"",data:rows});
+    return res.status(200).send({ msg: "", data: rows });
   } catch (error) {
     console.log(error);
+    return res.status(500).send({ msg: 'Error: ' + error });
+  }
+}
+
+
+/**
+* Fetches data based on a shifting 12-hour window (3PM to 3AM)
+* @param {import('express').Request} req - Express request
+* @param {import('express').Response} res - Express response
+*/
+const getTodaysData = async (req, res) => {
+  // Cleaned up the query string
+  const getDataQ = `
+      SELECT * FROM tbl_tts_record
+      WHERE tts_time >= (
+          CASE 
+              WHEN CURRENT_TIME < TIME '03:00:00' THEN CURRENT_DATE - INTERVAL '1 day'
+              ELSE CURRENT_DATE 
+          END + TIME '15:00:00'
+      )
+      AND tts_time < (
+          CASE 
+              WHEN CURRENT_TIME < TIME '03:00:00' THEN CURRENT_DATE
+              ELSE CURRENT_DATE + INTERVAL '1 day' 
+          END + TIME '03:00:00'
+      )
+      AND status='ACTIVE'
+      ORDER BY tts_time DESC;`;
+
+  try {
+    const { rows } = await pgClient.query(getDataQ);
+    return res.status(200).send({
+      msg: 'Data fetched successfully',
+      data: rows
+    });
+  } catch (error) {
+    console.error('Database Error:', error); // console.error is better for logs
+    return res.status(500).send({ msg: 'Internal Server Error' });
+  }
+}
+
+/**
+* Assigns line item type
+* @param {import('express').Request} req - Express request
+* @param {import('express').Response} res - Express response
+*/
+const deleteAudioById = async (req, res) => {
+  /** @type {{id:String,user_code}} */
+  const { id, user_code = "test_user" } = req.body;
+  const deleteAudioDataQ = "update tbl_tts_record set status='INACTIVE' where tts_id=$1;";
+  try {
+    const { rowCount } = await pgClient.query(deleteAudioDataQ, [id]);
+    if (rowCount === 0) {
+      return res.status(500).send({ msg: "Failed to delete." });
+    }
+    createAdminLog(`AUDIO INACTIVE ID:${id}`, user_code);
+    return res.status(200).send({ msg: "Data deleted." });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send({ msg: 'Error: ' + error });
+  }
+}
+
+/**
+* Assigns line item type
+* @param {import('express').Request} req - Express request
+* @param {import('express').Response} res - Express response
+*/
+const getUserData = async (req, res) => {
+  /** @type {{user_code:String}} */
+  const { user_code } = req.body;
+  const getAllUsersData = "select user_empcode,user_email,user_type,user_status,can_edit,can_create,can_view from tbl_user where user_empcode!=$1 order by user_id;"
+  try {
+    const { rows } = await pgClient.query(getAllUsersData, [user_code]);
+    if (rows.length == 0) {
+      return res.status(500).send({ msg: "Error while updateing asset status" });
+    }
+    return res.status(200).send({ data: rows });
+  } catch (error) {
+    return res.status(500).send({ msg: 'Error: ' + error });
+  }
+}
+
+
+/**
+* Assigns line item type
+* @param {import('express').Request} req - Express request
+* @param {import('express').Response} res - Express response
+*/
+const toogleUserAccessById = async (req, res) => {
+  /** @type {{user_id:String,current_status:String,access_name:String,user_code:String}} */
+  const { user_id, current_status, access_name ,user_code} = req.body;
+  const colname = `can_${access_name}`
+  const toggledStatus = current_status === "NO" ? "YES" : "NO";
+  const updateQ = `update tbl_user set ${colname}=$1 where user_empcode=$2;`;
+  try {
+    const {rowCount} = await pgClient.query(updateQ, [toggledStatus,user_id]);
+
+    toggledStatus==="NO"?createAdminLog(`USER ACCESS MODIFIED ID:${user_id} HAVE NO ${access_name} ACCESS.`,user_code):createAdminLog(`USER ACCESS MODIFIED ID:${user_id} HAVE ${access_name} ACCESS.`,user_code);
+
+    return res.status(200).send({data:rowCount});
+  } catch (error) {
     return res.status(500).send({ msg: 'Error: ' + error });
   }
 }
@@ -827,5 +1047,4 @@ const getAudioDataById = async (req, res) => {
 
 
 
-
-export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById };
+export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById };
