@@ -50,7 +50,6 @@ app.use('/s1/images', express.static(path.join(UPLOAD_BASE_PATH, 'images'),{
   }
 }));
 
-app.use(bodyParser.json({ limit: "2mb" }));
 app.use(cors("*"));
 app.use(express.json());
 

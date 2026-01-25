@@ -823,8 +823,8 @@ const storeInMechine = async (req, res) => {
     const QR_LINK = `${process.env.USER_PORTAL}/audio/${nextId}`;
     const qrBuffer = await generateCmykQr(QR_LINK);
     let { fileName } = await saveQRImage(qrBuffer, title.substring(0, 50));
-    const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,qr_key,duration) values ($1,$2,$3,$4,$5,$6);";
-    await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration]);
+    const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,qr_key,duration,tts_generated) values ($1,$2,$3,$4,$5,$6,$7);";
+    await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration,"YES"]);
     createAdminLog(`NEW TTS RECORD STORED TITLE->${title}`, user_code);
     return res.status(200).send({ msg: "Audio saved and QR Code created." });
   } catch (error) {
