@@ -16,11 +16,15 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { formatLocalISO } from "../utils/utils.js";
 import createAdminLog from "../utils/logWriter.js";
+import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
+import { streamToBuffer } from "../utils/steamToBuffer.js";
 configDotenv()
 
 const S3_BUCKET = process.env.S3_BUCKET;
 const REGION = process.env.AWS_REGION;
 const minmum_char = 10;
+
+const elevenLabClient = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY_2 });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -193,7 +197,7 @@ const getQrAudioByFrontendKey = async (req, res) => {
   try {
     const { rows, rowCount } = await pgClient.query(getDataQ, [id]);
     if (rowCount == 0) {
-      return res.status(500).send({ msg: "Invalid ID.",data:null });
+      return res.status(500).send({ msg: "Invalid ID.", data: null });
     }
     const audioKey = `${process.env.BACKEND_ASSET_PORTAL}/audio/${rows[0]["audio_key"]}`;
     const qrKey = `${process.env.BACKEND_ASSET_PORTAL}/qr/${rows[0]["qr_key"]}`;
@@ -211,9 +215,10 @@ const createSpeechOnly = async (req, res) => {
   const {
     text,
     language = "bn-IN",
-    voice = "bn-IN-Wavenet-A",
-    speakingRate = 1.0,
+    voice = "bn-IN-Wavenet-D",
+    // voice = "bn-IN-Standard-B",
     pitch = 0.0,
+    speakingRate = 1.35,
     user_code = 'test'
   } = req.body;
 
@@ -223,7 +228,7 @@ const createSpeechOnly = async (req, res) => {
 
     for (const chunk of chunks) {
       const processedText = await applyCustomPronunciation(chunk);
-      const ssmlPayload = `<speak>${processedText}</speak>`;
+      const ssmlPayload = `<speak><prosody pitch="-2st">${processedText}</prosody></speak>`;
       const [response] = await gcpTTSClient.synthesizeSpeech({
         input: { ssml: ssmlPayload },
         voice: {
@@ -256,6 +261,51 @@ const createSpeechOnly = async (req, res) => {
     res.status(500).json({ error: err.message || "TTS failed" });
   }
 };
+
+const createSpeechOnlyWithElevenLabs = async (req, res) => {
+  const { text, user_code = "test" } = req.body;
+
+  try {
+    const chunks = chunkText(text);
+    const audioBuffers = [];
+
+    for (const chunk of chunks) {
+      const audioStream =
+        await elevenLabClient.textToSpeech.convert(
+          "DGTOOUoGpoP6UZ9uSWfA",
+          {
+            text: chunk,
+            modelId: "eleven_v3",
+            outputFormat: "mp3_44100_128",
+          }
+        );
+
+      // ✅ Web ReadableStream → Buffer
+      const buffer = await streamToBuffer(audioStream);
+      audioBuffers.push(buffer);
+    }
+
+    const finalAudio = Buffer.concat(audioBuffers);
+
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", finalAudio.length);
+    res.setHeader(
+      "Content-Disposition",
+      'inline; filename="news-tts.mp3"'
+    );
+
+    createAdminLog("TEXT TO SPEECH GENERATED (ELEVENLABS)", user_code);
+    return res.send(finalAudio);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: err.message || "TTS failed",
+    });
+  }
+};
+
+
 
 const createSpeechOnlyForCron = async (text) => {
   const data = {
@@ -824,7 +874,7 @@ const storeInMechine = async (req, res) => {
     const qrBuffer = await generateCmykQr(QR_LINK);
     let { fileName } = await saveQRImage(qrBuffer, title.substring(0, 50));
     const insertQ = "insert into tbl_tts_record(tts_id,title,tts_text,audio_key,qr_key,duration,tts_generated) values ($1,$2,$3,$4,$5,$6,$7);";
-    await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration,"YES"]);
+    await pgClient.query(insertQ, [nextTtsId, title, text, audioFilename, fileName, duration, "YES"]);
     createAdminLog(`NEW TTS RECORD STORED TITLE->${title}`, user_code);
     return res.status(200).send({ msg: "Audio saved and QR Code created." });
   } catch (error) {
@@ -1027,16 +1077,16 @@ const getUserData = async (req, res) => {
 */
 const toogleUserAccessById = async (req, res) => {
   /** @type {{user_id:String,current_status:String,access_name:String,user_code:String}} */
-  const { user_id, current_status, access_name ,user_code} = req.body;
+  const { user_id, current_status, access_name, user_code } = req.body;
   const colname = `can_${access_name}`
   const toggledStatus = current_status === "NO" ? "YES" : "NO";
   const updateQ = `update tbl_user set ${colname}=$1 where user_empcode=$2;`;
   try {
-    const {rowCount} = await pgClient.query(updateQ, [toggledStatus,user_id]);
+    const { rowCount } = await pgClient.query(updateQ, [toggledStatus, user_id]);
 
-    toggledStatus==="NO"?createAdminLog(`USER ACCESS MODIFIED ID:${user_id} HAVE NO ${access_name} ACCESS.`,user_code):createAdminLog(`USER ACCESS MODIFIED ID:${user_id} HAVE ${access_name} ACCESS.`,user_code);
+    toggledStatus === "NO" ? createAdminLog(`USER ACCESS MODIFIED ID:${user_id} HAVE NO ${access_name} ACCESS.`, user_code) : createAdminLog(`USER ACCESS MODIFIED ID:${user_id} HAVE ${access_name} ACCESS.`, user_code);
 
-    return res.status(200).send({data:rowCount});
+    return res.status(200).send({ data: rowCount });
   } catch (error) {
     return res.status(500).send({ msg: 'Error: ' + error });
   }
@@ -1047,4 +1097,4 @@ const toogleUserAccessById = async (req, res) => {
 
 
 
-export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById };
+export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById,createSpeechOnlyWithElevenLabs };

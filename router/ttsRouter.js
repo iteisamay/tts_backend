@@ -1,10 +1,10 @@
 import express from 'express';
-import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst,createTts_forUpdate,getQrAudioByFrontendKey,getTodaysData,deleteAudioById, getUserData, toogleUserAccessById } from '../controller/ttsController-gcp.js';
+import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst,createTts_forUpdate,getQrAudioByFrontendKey,getTodaysData,deleteAudioById, getUserData, toogleUserAccessById, createSpeechOnlyWithElevenLabs } from '../controller/ttsController-gcp.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
-import { verifyAction } from '../middlewares/veriFication.js';
+import { verifyAction } from '../middlewares/verification.js';
 
 const ttsRouter = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +52,7 @@ ttsRouter.delete('/delete',verifyAction, deleteAudioById);
 
 ttsRouter.get('/get-audio-presigned-url', getAudioPresignedUrl);
 ttsRouter.post('/finalize', finalizeTts);
+// ttsRouter.post('/create-speech-only',verifyAction, createSpeechOnlyWithElevenLabs);
 ttsRouter.post('/create-speech-only',verifyAction, createSpeechOnly);
 ttsRouter.post('/save', saveTtsToDb);
 // ttsRouter.post('/save-speech-to-db', saveSpeechToDb);
