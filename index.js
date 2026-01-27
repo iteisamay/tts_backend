@@ -1,14 +1,11 @@
-// server.js
 import express from "express";
 import { configDotenv } from "dotenv";
-import bodyParser from "body-parser";
 import cors from 'cors';
 import ttsRouter from "./router/ttsRouter.js";
 import authRouter from "./router/authRouter.js";
 import pgClient from "./db/pgClient.js";
-import { fileURLToPath } from 'url';
-import path from 'path';
-import "./utils/cronJobs.js"
+
+// import "./utils/cronJobs.js"
 
 configDotenv();
 
@@ -23,32 +20,6 @@ pgClient.connect()
   });
 
 const app = express();
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const UPLOAD_BASE_PATH = path.join(__dirname, '..', 'uploads');
-app.use('/s1/qr', express.static(path.join(UPLOAD_BASE_PATH, 'qr'),{
-  etag: false,
-  lastModified: false,
-  setHeaders: (res, path) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  }
-}));
-
-app.use('/s1/audio', express.static(path.join(UPLOAD_BASE_PATH, 'audios'), {
-  etag: false,
-  lastModified: false,
-  setHeaders: (res, path) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  }
-}));
-
-app.use('/s1/images', express.static(path.join(UPLOAD_BASE_PATH, 'images'),{
-  etag: false,
-  lastModified: false,
-  setHeaders: (res, path) => {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-  }
-}));
 
 app.use(cors("*"));
 app.use(express.json());
