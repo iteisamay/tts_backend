@@ -5,7 +5,7 @@ import ttsRouter from "./router/ttsRouter.js";
 import authRouter from "./router/authRouter.js";
 import pgClient from "./db/pgClient.js";
 
-// import "./utils/cronJobs.js"
+import "./utils/cronJobs.js"
 
 configDotenv();
 
