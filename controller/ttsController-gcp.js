@@ -229,9 +229,9 @@ const createSpeechOnly = async (req, res) => {
   const {
     text,
     language = "bn-IN",
-    voice = "bn-IN-Wavenet-B",
-    pitch = -1.45,
-    speakingRate = 1.25,
+    voice = "bn-IN-Wavenet-A",
+    pitch = 1.3,
+    speakingRate = 1.18,
     user_code = 'test'
   } = req.body;
 
