@@ -5,10 +5,11 @@ import ttsRouter from "./router/ttsRouter.js";
 import authRouter from "./router/authRouter.js";
 import pgClient from "./db/pgClient.js";
 
-import {startTtsWorker} from  "./utils/cronJobs.js"
+import {startTtsWorker,generateAudioBufferAndSaveThroughLlm} from  "./utils/cronJobs.js"
 
 configDotenv();
-
+startTtsWorker();
+generateAudioBufferAndSaveThroughLlm();
 const PORT = process.env.PORT || 3000;
 
 pgClient.connect()
@@ -28,5 +29,5 @@ app.use('/s1/api/v1/tts', ttsRouter);
 app.use('/s1/api/v1/auth', authRouter);
 
 
-startTtsWorker();
+
 app.listen(PORT, () => console.log("Server listening on", PORT));

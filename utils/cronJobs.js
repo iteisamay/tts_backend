@@ -1,22 +1,64 @@
 import cron from "node-cron";
+import textToSpeech from "@google-cloud/text-to-speech";
 import { fileURLToPath } from 'url';
 import pgClient from '../db/pgClient.js';
-import { createSpeechOnlyForCron, createSpeechOnlyWithElevenLabsForCorn, formatToISODuration, generateCmykQr, saveQRImage } from "../controller/ttsController-gcp.js";
-import fs from "fs/promises";
+import { createSpeechOnly, createSpeechOnlyForCron, createSpeechOnlyWithElevenLabsForCorn, formatToISODuration, generateCmykQr, saveQRImage } from "../controller/ttsController-gcp.js";
+import fs from "fs";
 import path from "path";
 import { parseFile } from 'music-metadata';
 import createAdminLog from "./logWriter.js";
 import { generatePublicToken } from "./crypto.js";
+import { chunkText } from '../utils/chunk.js';
+import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
+import { streamToBuffer } from "../utils/steamToBuffer.js";
+
 
 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DEFAULT_FILE_NAME='under_process_audio.mp3';
-const UPLOAD_BASE_PATH = path.join(__dirname, '..', '..', 'uploads');
-const DEFAULT_AUDIO_PATH=path.join(__dirname, '..', '..', 'uploads/audios',DEFAULT_FILE_NAME);
+const DEFAULT_FILE_NAME = 'under_process_audio.mp3';
+const UPLOAD_BASE_PATH = path.join(__dirname, '..', 'uploads');
+const DEFAULT_AUDIO_PATH = path.join(__dirname, '..', 'uploads/audios', DEFAULT_FILE_NAME);
+const gcpTTSClient = new textToSpeech.TextToSpeechClient({
+    keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
+});
+const elevenLabClient = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY_2 });
 
 
+/**
+ * Cleans and applies custom pronunciations using SSML <sub> tags.
+ */
+const applyCustomPronunciation = async (text) => {
+    const rawDictionary = await getAllCustomeSpeechAsDictionary();
+    const sortedWords = Object.keys(rawDictionary).sort((a, b) => b.length - a.length);
+
+    let processedText = text;
+
+    for (const word of sortedWords) {
+        const pronunciation = rawDictionary[word].replace(/[\u00A0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000]/g, " ");
+        const escapedWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`(?<![\\u0980-\\u09FF])${escapedWord}(?![\\u0980-\\u09FF])`, 'g');
+        processedText = processedText.replace(regex, `<sub alias="${pronunciation}">${word}</sub>`);
+    }
+    return processedText;
+};
+
+
+const getAllCustomeSpeechAsDictionary = async () => {
+    const selectQuery = 'SELECT * FROM tts_custom';
+    try {
+        const result = await pgClient.query(selectQuery);
+        const dictionary = result.rows.reduce((acc, row) => {
+            acc[row.word] = row.speech;
+            return acc;
+        }, {});
+        return dictionary;
+    } catch (error) {
+        console.log(error);
+        return error;
+    }
+}
 
 async function startTtsWorker() {
     console.log("🚀 TTS Worker Started...");
@@ -27,19 +69,17 @@ async function startTtsWorker() {
         try {
             const getRowData = await getNoTtsGeneratedData();
             if (!getRowData || getRowData.length === 0) {
-                await sleep(10 * 1000);//10 sec
+                await sleep(60 * 1000);//1 min
                 continue;
             }
-
             const currentDateTime = new Date();
             const modTime = `${currentDateTime.getFullYear()}-${currentDateTime.getMonth() + 1}-${currentDateTime.getDate()} ${currentDateTime.getHours()}:${currentDateTime.getMinutes()}:${currentDateTime.getSeconds()}`;
-
             if (getRowData[0]['tts_generated'] === 'NO') {
                 const audioFilePath = DEFAULT_AUDIO_PATH;
 
                 const audioMetadata = await parseFile(audioFilePath);
                 const duration = formatToISODuration(audioMetadata.format.duration);
-                const hashedId=generatePublicToken();
+                const hashedId = generatePublicToken();
                 const QR_LINK = `${process.env.USER_PORTAL}/audio/${hashedId}`;
 
                 const qrBuffer = await generateCmykQr(QR_LINK);
@@ -49,7 +89,7 @@ async function startTtsWorker() {
                 );
 
                 const insertQ = `
-                    UPDATE tbl_tts_record 
+                    UPDATE tbl_tts_record
                     SET audio_key=$1,
                         qr_key=$2,
                         duration=$3,
@@ -83,6 +123,144 @@ async function startTtsWorker() {
         await sleep(60 * 1000);
     }
 }
+
+async function generateAudioBufferAndSaveThroughLlm() {
+    const getNonGeneratedData = `
+    select tts_id, tts_text, llm_name 
+    from tbl_tts_record 
+    where tts_generated='SET FOR GENERATION'
+    order by tts_id 
+    limit 1;
+  `;
+
+    while (true) {
+        console.log("Audio  Generation started.");
+        const { rows, rowCount } =
+            await pgClient.query(getNonGeneratedData);
+
+        if (rowCount === 0) {
+            await sleep(60 * 1000);
+            continue;
+        }
+
+        const job = rows[0];
+
+        try {
+            // 🔒 Lock row
+            await pgClient.query(
+                `update tbl_tts_record 
+         set tts_generated='PROCESSING' 
+         where tts_id=$1`,
+                [job.tts_id]
+            );
+
+            let finalAudio;
+
+            if (job.llm_name === "GOOGLE_API") {
+                finalAudio = await generateWithGoogle(job.tts_text);
+            } else if (job.llm_name === "ELEVENLAB_API") {
+                finalAudio = await generateWithElevenLabs(job.tts_text);
+            } else {
+                throw new Error("Invalid LLM");
+            }
+
+            // ✅ Save file
+            const timestamp = Date.now();
+            const random5 = Math.floor(10000 + Math.random() * 90000);
+            const fileName = `${timestamp}_${random5}.mp3`;
+
+            const filePath = path.join(__dirname, "../uploads/audios", fileName);
+
+            await fs.writeFileSync(filePath, finalAudio);
+
+            // ✅ Update DB as completed
+            await pgClient.query(
+                `update tbl_tts_record 
+         set tts_generated='COMPLETED',
+             audio_key=$1
+         where tts_id=$2`,
+                [fileName, job.tts_id]
+            );
+
+        } catch (err) {
+            console.error("Generation failed:", err);
+
+            await pgClient.query(
+                `update tbl_tts_record 
+         set tts_generated='FAILED'
+         where tts_id=$1`,
+                [job.tts_id]
+            );
+        }
+    }
+}
+
+
+
+
+async function generateWithGoogle(text) {
+    const chunks = chunkText(text);
+    const audioBuffers = [];
+
+    for (const chunk of chunks) {
+        const processedText = await applyCustomPronunciation(chunk);
+
+        const ssmlPayload =
+            `<speak><prosody pitch="-2st">${processedText}</prosody></speak>`;
+
+        const [response] = await gcpTTSClient.synthesizeSpeech({
+            input: { ssml: ssmlPayload },
+            voice: {
+                languageCode: "bn-IN",
+                name: "bn-IN-Wavenet-A",
+            },
+            audioConfig: {
+                audioEncoding: "MP3",
+                speakingRate: 1.18,
+                pitch: 1.3,
+            },
+        });
+
+        const buffer = Buffer.isBuffer(response.audioContent)
+            ? response.audioContent
+            : Buffer.from(response.audioContent, "base64");
+
+        audioBuffers.push(buffer);
+    }
+
+    return Buffer.concat(audioBuffers);
+}
+
+
+
+async function generateWithElevenLabs(text) {
+    const MAX_CHARS = 5000;
+
+    const chunks =
+        text.length > MAX_CHARS
+            ? chunkText(text, MAX_CHARS)
+            : [text];
+    const audioBuffers = await Promise.all(
+        chunks.map(async (chunk) => {
+            const audioStream =
+                await elevenLabClient.textToSpeech.convert(
+                    "DGTOOUoGpoP6UZ9uSWfA",
+                    {
+                        text: chunk,
+                        modelId: "eleven_v3",
+                        outputFormat: "mp3_44100_128",
+                    }
+                );
+
+            return streamToBuffer(audioStream);
+        })
+    );
+    const concated_buffer = Buffer.concat(audioBuffers);
+    return concated_buffer;
+}
+
+
+
 
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -118,4 +296,4 @@ const updateBufferToDrive = async (bufferData, filename) => {
     }
 }
 
-export{startTtsWorker}
+export { startTtsWorker, generateAudioBufferAndSaveThroughLlm }
