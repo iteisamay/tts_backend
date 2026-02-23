@@ -4,7 +4,7 @@ async function getElevenLabsCredits() {
   try {
     const res = await axios.get("https://api.elevenlabs.io/v1/user", {
       headers: {
-        "xi-api-key": process.env.ELEVENLABS_API_KEY_1,
+        "xi-api-key": process.env.ELEVENLABS_API_KEY_2,
       },
     });
 

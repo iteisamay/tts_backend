@@ -32,7 +32,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const QR_FOLDER = path.resolve(__dirname, '..', '..', 'uploads', 'qr');
 const s3 = new S3Client({ region: REGION });
-
+const DEFAULT_FILE_NAME='under_process_audio.mp3';
 const AUDIO_UPLOAD_BASE_PATH = path.join(__dirname, '..', '..', 'uploads', 'audios');
 
 const gcpTTSClient = new textToSpeech.TextToSpeechClient({
@@ -132,14 +132,23 @@ const createTts = async (req, res) => {
 
 const createTts_forFirst = async (req, res) => {
   const { title, text, user_code = 'test', pk_frontend } = req.body;
+  console.log(req.body);
   if (!title || title.trim() == "" || !text || text.trim() == "") {
     return res.status(500).send({ msg: "Please provide valid data." });
   }
-  const insertQ = 'insert into tbl_tts_record(tts_id,title,tts_text,frontend_pk) values ($1,$2,$3,$4);'
+  const insertQ = 'insert into tbl_tts_record(tts_id,title,tts_text,frontend_pk,audio_key,qr_key,public_token) values ($1,$2,$3,$4,$5,$6,$7);'
   try {
     const nextId = await getNextVal();
     const tts_id = `TTS${nextId}`;
-    const { rows } = await pgClient.query(insertQ, [tts_id, title, text, pk_frontend]);
+    
+    //set default audio and generate qrcode and generate publictoken
+    const default_audio=DEFAULT_FILE_NAME;
+    const public_token=generatePublicToken();
+    const QR_LINK=`${process.env.USER_PORTAL}/audio/${public_token}`;
+    const qrBuffer = await generateCmykQr(QR_LINK);
+    let { fileName } = await saveQRImage(qrBuffer, title.substring(0, 50));
+
+    const { rows } = await pgClient.query(insertQ, [tts_id, title, text, pk_frontend,default_audio,fileName,public_token]);
     createAdminLog(`NEW STORY UPLOADED ID: ${tts_id}`, user_code);
     console.log(rows);
     return res.status(200).send({ msg: "Data Submitted for qr generation." });
@@ -163,12 +172,12 @@ const createTts_forUpdate = async (req, res) => {
     SET title = $1, 
         tts_text = $2, 
         tts_generated = $3, 
-        tts_mod_time = NOW() 
+        tts_mod_time = NOW()
     WHERE frontend_pk = $4 
     RETURNING tts_id;`;
 
   try {
-    const { rows } = await pgClient.query(updateQ, [title, text, 'NEED UPDATE', pk_frontend]);
+    const { rows } = await pgClient.query(updateQ, [title, text, 'NEED TO UPDATE', pk_frontend]);
     if (rows.length === 0) {
       return res.status(404).json({ error: "Record not found with provided ID." });
     }
@@ -740,7 +749,8 @@ const updateTtsSpeechv2 = async (req, res) => {
       await fsp.unlink(newFilePath).catch(() => { });
       return res.status(404).send("Record not found");
     }
-    const oldFileName = rows[0]["audio_key"];
+    const oldFileName = rows[0]["audio_key"]==='under_process_audio.mp3'?Date.now() + '_' + Math.round(Math.random() * 1E5)+'.mp3':rows[0]["audio_key"];
+    console.log(oldFileName);
     const oldFilePath = path.join(AUDIO_UPLOAD_BASE_PATH, oldFileName);
     fs.rename(newFilePath, oldFilePath, (error) => {
       if (error) {
@@ -749,8 +759,8 @@ const updateTtsSpeechv2 = async (req, res) => {
       }
     });
     const { rowCount } = await pgClient.query(
-      'update tbl_tts_record set tts_text=$1 WHERE tts_id = $2',
-      [text, id]
+      'update tbl_tts_record set tts_text=$1,tts_generated=$2,audio_key=$3,tts_mod_time=NOW() WHERE tts_id = $4',
+      [text,"YES",oldFileName,id]
     );
     if (rowCount == 0) {
       await fsp.unlink(newFilePath).catch(() => { });
@@ -1167,9 +1177,26 @@ const getElevenLabcreditData = async (req, res) => {
 
 
 
+/**
+* Assigns line item type
+* @param {import('express').Request} req - Express request
+* @param {import('express').Response} res - Express response
+*/
+const getAllpublicToken=async(req,res)=>{
+  const getAllPubTokeQ='select public_token,tts_mod_time from tbl_tts_record order by tts_id desc;';
+  try{
+    const {rows}=await pgClient.query(getAllPubTokeQ);
+    return res.status(200).send({msg:"Data fetched." , data:rows});
+}catch(error){
+console.log(error);
+return res.status(500).send({msg:'Error: '+error});
+}
+}
 
 
 
 
 
-export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById,createSpeechOnlyWithElevenLabs,createSpeechOnLlmNumber,getElevenLabcreditData,createSpeechOnlyWithElevenLabsForCorn };
+
+
+export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById,createSpeechOnlyWithElevenLabs,createSpeechOnLlmNumber,getElevenLabcreditData,createSpeechOnlyWithElevenLabsForCorn,getAllpublicToken };
