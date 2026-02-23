@@ -234,12 +234,9 @@ async function generateWithGoogle(text) {
 
 
 async function generateWithElevenLabs(text) {
-    const MAX_CHARS = 5000;
+    // const MAX_CHARS = 5000;
 
-    const chunks =
-        text.length > MAX_CHARS
-            ? chunkText(text, MAX_CHARS)
-            : [text];
+    const chunks =[text];
     const audioBuffers = await Promise.all(
         chunks.map(async (chunk) => {
             const audioStream =
