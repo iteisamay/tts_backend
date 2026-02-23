@@ -11,6 +11,7 @@ import { generatePublicToken } from "./crypto.js";
 import { chunkText } from '../utils/chunk.js';
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import { streamToBuffer } from "../utils/steamToBuffer.js";
+import pLimit from 'p-limit'
 
 
 
@@ -233,27 +234,97 @@ async function generateWithGoogle(text) {
 
 
 
+// async function generateWithElevenLabs(text) {
+//     // const MAX_CHARS = 5000;
+
+//     const chunks =[text];
+//     const audioBuffers = await Promise.all(
+//         chunks.map(async (chunk) => {
+//             const audioStream =
+//                 await elevenLabClient.textToSpeech.convert(
+//                     "DGTOOUoGpoP6UZ9uSWfA",
+//                     {
+//                         text: chunk,
+//                         modelId: "eleven_v3",
+//                         outputFormat: "mp3_44100_128",
+//                     }
+//                 );
+
+//             return streamToBuffer(audioStream);
+//         })
+//     );
+//     const concated_buffer = Buffer.concat(audioBuffers);
+//     return concated_buffer;
+// }
+
+
+
 async function generateWithElevenLabs(text) {
-    // const MAX_CHARS = 5000;
+  if (!text) throw new Error("Text is required");
 
-    const chunks =[text];
-    const audioBuffers = await Promise.all(
-        chunks.map(async (chunk) => {
-            const audioStream =
-                await elevenLabClient.textToSpeech.convert(
-                    "DGTOOUoGpoP6UZ9uSWfA",
-                    {
-                        text: chunk,
-                        modelId: "eleven_v3",
-                        outputFormat: "mp3_44100_128",
-                    }
-                );
+  const MAX_CHARS = 1800;
+  const CONCURRENCY = 3;
 
-            return streamToBuffer(audioStream);
-        })
-    );
-    const concated_buffer = Buffer.concat(audioBuffers);
-    return concated_buffer;
+  const chunks = splitTextByPipe(text, MAX_CHARS);
+
+  console.log("Total characters:", text.length);
+  console.log("Total chunks:", chunks.length);
+
+  const limit = pLimit(CONCURRENCY);
+
+  const audioBuffers = await Promise.all(
+    chunks.map(chunk =>
+      limit(async () => {
+        const audioStream =
+          await elevenLabClient.textToSpeech.convert(
+            "DGTOOUoGpoP6UZ9uSWfA",
+            {
+              text: chunk,
+              modelId: "eleven_v3",
+              outputFormat: "mp3_44100_128",
+            }
+          );
+
+        return streamToBuffer(audioStream);
+      })
+    )
+  );
+
+  return Buffer.concat(audioBuffers);
+}
+
+function splitTextByPipe(text, maxChars = 1800) {
+  const parts = text.split("।");
+  const chunks = [];
+  let currentChunk = "";
+
+  for (let part of parts) {
+    part = part.trim();
+    if (!part) continue;
+
+    const candidate = currentChunk
+      ? currentChunk + " । " + part
+      : part;
+
+    if (candidate.length > maxChars) {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = part;
+      } else {
+        // Edge case: single part bigger than maxChars
+        chunks.push(part.slice(0, maxChars));
+        currentChunk = part.slice(maxChars);
+      }
+    } else {
+      currentChunk = candidate;
+    }
+  }
+
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
 }
 
 
