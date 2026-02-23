@@ -262,13 +262,10 @@ async function generateWithGoogle(text) {
 async function generateWithElevenLabs(text) {
   if (!text) throw new Error("Text is required");
 
-  const MAX_CHARS = 1800;
+  const MAX_CHARS = 1000;
   const CONCURRENCY = 3;
 
-  const chunks = splitTextByPipe(text, MAX_CHARS);
-
-  console.log("Total characters:", text.length);
-  console.log("Total chunks:", chunks.length);
+  const chunks = splitTextByDanda(text, MAX_CHARS);
 
   const limit = pLimit(CONCURRENCY);
 
@@ -293,30 +290,32 @@ async function generateWithElevenLabs(text) {
   return Buffer.concat(audioBuffers);
 }
 
-function splitTextByPipe(text, maxChars = 1800) {
-  const parts = text.split("।");
+function splitTextByDanda(text, maxChars = 1000) {
+  if (!text) return [];
+  const sentences = text.split("।")
+    .map(s => s.trim())
+    .filter(Boolean);
+
   const chunks = [];
   let currentChunk = "";
 
-  for (let part of parts) {
-    part = part.trim();
-    if (!part) continue;
+  for (let i = 0; i < sentences.length; i++) {
+    const sentence = sentences[i] + "।"; // add back danda
 
-    const candidate = currentChunk
-      ? currentChunk + " । " + part
-      : part;
-
-    if (candidate.length > maxChars) {
-      if (currentChunk) {
+    // If adding this sentence exceeds limit → push current chunk
+    if ((currentChunk + " " + sentence).trim().length > maxChars) {
+      if (currentChunk.trim()) {
         chunks.push(currentChunk.trim());
-        currentChunk = part;
+        currentChunk = sentence;
       } else {
-        // Edge case: single part bigger than maxChars
-        chunks.push(part.slice(0, maxChars));
-        currentChunk = part.slice(maxChars);
+        // Edge case: single sentence longer than maxChars
+        chunks.push(sentence.slice(0, maxChars));
+        currentChunk = sentence.slice(maxChars);
       }
     } else {
-      currentChunk = candidate;
+      currentChunk = currentChunk
+        ? currentChunk + " " + sentence
+        : sentence;
     }
   }
 
