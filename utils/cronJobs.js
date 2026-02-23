@@ -169,9 +169,9 @@ async function generateAudioBufferAndSaveThroughLlm() {
             const random5 = Math.floor(10000 + Math.random() * 90000);
             const fileName = `${timestamp}_${random5}.mp3`;
 
-            const filePath = path.join(__dirname, "../uploads/audios", fileName);
+            const filePath = path.join(__dirname, "..","..","uploads/audios", fileName);
 
-            await fs.writeFileSync(filePath, finalAudio);
+            fs.writeFileSync(filePath, finalAudio);
 
             // ✅ Update DB as completed
             await pgClient.query(
