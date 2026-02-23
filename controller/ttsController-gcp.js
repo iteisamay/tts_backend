@@ -284,28 +284,79 @@ const createSpeechOnly = async (req, res) => {
   }
 };
 
+// const createSpeechOnlyWithElevenLabs = async (req, res) => {
+//   const { text, user_code = "test" } = req.body;
+
+//   try {
+//     const chunks = chunkText(text);
+//     const audioBuffers = [];
+
+//     for (const chunk of chunks) {
+//       const audioStream =
+//         await elevenLabClient.textToSpeech.convert(
+//           "DGTOOUoGpoP6UZ9uSWfA",
+//           {
+//             text: chunk,
+//             modelId: "eleven_v3",
+//             outputFormat: "mp3_44100_128",
+//           }
+//         );
+
+//       // ✅ Web ReadableStream → Buffer
+//       const buffer = await streamToBuffer(audioStream);
+//       audioBuffers.push(buffer);
+//     }
+
+//     const finalAudio = Buffer.concat(audioBuffers);
+
+//     res.setHeader("Content-Type", "audio/mpeg");
+//     res.setHeader("Content-Length", finalAudio.length);
+//     res.setHeader(
+//       "Content-Disposition",
+//       'inline; filename="news-tts.mp3"'
+//     );
+
+//     createAdminLog("TEXT TO SPEECH GENERATED (ELEVENLABS)", user_code);
+//     return res.send(finalAudio);
+
+//   } catch (err) {
+//     console.error(err);
+//     res.status(500).json({
+//       error: err.message || "TTS failed",
+//     });
+//   }
+// };
+
+
 const createSpeechOnlyWithElevenLabs = async (req, res) => {
   const { text, user_code = "test" } = req.body;
 
+  if (!text) {
+    return res.status(400).json({ error: "Text is required" });
+  }
+
   try {
-    const chunks = chunkText(text);
-    const audioBuffers = [];
+    const MAX_CHARS = 2500; // safe size
+    const chunks = text.length > MAX_CHARS
+      ? chunkText(text, MAX_CHARS)
+      : [text];
 
-    for (const chunk of chunks) {
-      const audioStream =
-        await elevenLabClient.textToSpeech.convert(
-          "DGTOOUoGpoP6UZ9uSWfA",
-          {
-            text: chunk,
-            modelId: "eleven_v3",
-            outputFormat: "mp3_44100_128",
-          }
-        );
+    // Parallel processing
+    const audioBuffers = await Promise.all(
+      chunks.map(async (chunk) => {
+        const audioStream =
+          await elevenLabClient.textToSpeech.convert(
+            "DGTOOUoGpoP6UZ9uSWfA",
+            {
+              text: chunk,
+              modelId: "eleven_v3",
+              outputFormat: "mp3_44100_128",
+            }
+          );
 
-      // ✅ Web ReadableStream → Buffer
-      const buffer = await streamToBuffer(audioStream);
-      audioBuffers.push(buffer);
-    }
+        return streamToBuffer(audioStream);
+      })
+    );
 
     const finalAudio = Buffer.concat(audioBuffers);
 
@@ -317,15 +368,17 @@ const createSpeechOnlyWithElevenLabs = async (req, res) => {
     );
 
     createAdminLog("TEXT TO SPEECH GENERATED (ELEVENLABS)", user_code);
+
     return res.send(finalAudio);
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({
+    console.error("ElevenLabs error:", err);
+    return res.status(500).json({
       error: err.message || "TTS failed",
     });
   }
 };
+
 
 const createSpeechOnlyWithElevenLabsForCorn = async (data) => {
   const { text, user_code = "test" } = data;
