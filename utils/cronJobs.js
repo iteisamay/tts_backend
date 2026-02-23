@@ -40,7 +40,7 @@ async function startTtsWorker() {
                 const audioMetadata = await parseFile(audioFilePath);
                 const duration = formatToISODuration(audioMetadata.format.duration);
                 const hashedId=generatePublicToken();
-                const QR_LINK = `${process.env.USER_PORTAL}/listen/audio/${hashedId}`;
+                const QR_LINK = `${process.env.USER_PORTAL}/audio/${hashedId}`;
 
                 const qrBuffer = await generateCmykQr(QR_LINK);
                 const { fileName } = await saveQRImage(
