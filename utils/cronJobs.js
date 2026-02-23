@@ -26,7 +26,6 @@ async function startTtsWorker() {
 
         try {
             const getRowData = await getNoTtsGeneratedData();
-            console.log(getRowData);
             if (!getRowData || getRowData.length === 0) {
                 await sleep(10 * 1000);//10 sec
                 continue;
