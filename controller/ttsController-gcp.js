@@ -948,11 +948,39 @@ const getAllCustomeSpeechAsDictionary = async () => {
 }
 
 
+// const generateCmykQr = async (audioUrl) => {
+//   // 1. Generate QR as a high-quality Buffer
+//   const qrPngBuffer = await QRCode.toBuffer(audioUrl, {
+//     width: 600,
+//     margin: 0,
+//     errorCorrectionLevel: 'L',
+//     color: {
+//       dark: '#000000',
+//       light: '#FFFFFF'
+//     }
+//   });
+
+//   return await sharp(qrPngBuffer)
+//     .greyscale()
+//     .threshold(128)
+//     .toColourspace('cmyk')
+//     .withMetadata({
+//       icc: 'USWebCoatedSWOP.icc'
+//     })
+//     .jpeg({
+//       quality: 100,
+//       chromaSubsampling: '4:4:4',
+//       // trellisQuantisation: true,
+//       // overshootDeringing: true
+//     })
+//     .toBuffer();
+// };
+
 const generateCmykQr = async (audioUrl) => {
-  // 1. Generate QR as a high-quality Buffer
-  const qrPngBuffer = await QRCode.toBuffer(audioUrl, {
+  // Step 1: Generate pure 1-bit QR
+  const qrBuffer = await QRCode.toBuffer(audioUrl, {
     width: 600,
-    margin: 0,
+    margin: 1,
     errorCorrectionLevel: 'L',
     color: {
       dark: '#000000',
@@ -960,22 +988,46 @@ const generateCmykQr = async (audioUrl) => {
     }
   });
 
-  return await sharp(qrPngBuffer)
+  // Step 2: Convert to 1-bit mask
+  const bw = await sharp(qrBuffer)
     .greyscale()
     .threshold(128)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const { data, info } = bw;
+  const totalPixels = info.width * info.height;
+
+  // Step 3: Create CMYK buffer manually
+  const cmykBuffer = Buffer.alloc(totalPixels * 4);
+
+  for (let i = 0; i < totalPixels; i++) {
+    const pixel = data[i]; // 0 or 255
+
+    const isBlack = pixel === 0;
+
+    const idx = i * 4;
+
+    cmykBuffer[idx] = 0;                 // C
+    cmykBuffer[idx + 1] = 0;             // M
+    cmykBuffer[idx + 2] = 0;             // Y
+    cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K only
+  }
+
+  return await sharp(cmykBuffer, {
+    raw: {
+      width: info.width,
+      height: info.height,
+      channels: 4
+    }
+  })
     .toColourspace('cmyk')
-    .withMetadata({
-      icc: 'USWebCoatedSWOP.icc'
-    })
     .jpeg({
       quality: 100,
-      chromaSubsampling: '4:4:4',
-      // trellisQuantisation: true,
-      // overshootDeringing: true
+      chromaSubsampling: '4:4:4'
     })
     .toBuffer();
 };
-
 
 /**
 * Assigns line item type
