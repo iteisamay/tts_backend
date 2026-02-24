@@ -952,7 +952,7 @@ const generateCmykQr = async (audioUrl) => {
   // 1. Generate QR as a high-quality Buffer
   const qrPngBuffer = await QRCode.toBuffer(audioUrl, {
     width: 600,
-    margin: 1,
+    margin: 0,
     errorCorrectionLevel: 'L',
     color: {
       dark: '#000000',
@@ -964,11 +964,14 @@ const generateCmykQr = async (audioUrl) => {
     .greyscale()
     .threshold(128)
     .toColourspace('cmyk')
+    .withMetadata({
+      icc: 'USWebCoatedSWOP.icc'
+    })
     .jpeg({
       quality: 100,
       chromaSubsampling: '4:4:4',
-      trellisQuantisation: true,
-      overshootDeringing: true
+      // trellisQuantisation: true,
+      // overshootDeringing: true
     })
     .toBuffer();
 };
