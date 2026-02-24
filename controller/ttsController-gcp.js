@@ -22,7 +22,7 @@ import { getElevenLabsCredits } from "../utils/getElevenLabsCredit.js";
 import { generatePublicToken } from "../utils/crypto.js";
 import gmLib from 'gm';
 configDotenv()
-const gm = gmLib.subClass({ imageMagick: true });
+const gm = gmLib.subClass({ imageMagick: true,appPath: '/usr/bin/' });
 
 const S3_BUCKET = process.env.S3_BUCKET;
 const REGION = process.env.AWS_REGION;
