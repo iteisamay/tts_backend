@@ -23,7 +23,6 @@
     "crypto": "^1.0.1",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "gm": "^1.25.1",
     "multer": "^2.0.2",
     "music-metadata": "^11.10.3",
     "node-cron": "^4.2.1",

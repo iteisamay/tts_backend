@@ -20,9 +20,7 @@ import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { streamToBuffer } from "../utils/steamToBuffer.js";
 import { getElevenLabsCredits } from "../utils/getElevenLabsCredit.js";
 import { generatePublicToken } from "../utils/crypto.js";
-import gmLib from 'gm';
 configDotenv()
-const gm = gmLib.subClass({ imageMagick: true,appPath: '/usr/bin/' });
 
 const S3_BUCKET = process.env.S3_BUCKET;
 const REGION = process.env.AWS_REGION;
@@ -943,45 +941,16 @@ const getAllCustomeSpeechAsDictionary = async () => {
   }
 }
 
-
 // const generateCmykQr = async (audioUrl) => {
-//   // 1. Generate QR as a high-quality Buffer
-//   const qrPngBuffer = await QRCode.toBuffer(audioUrl, {
-//     width: 600,
-//     margin: 0,
-//     errorCorrectionLevel: 'L',
-//     color: {
-//       dark: '#000000',
-//       light: '#FFFFFF'
-//     }
-//   });
-
-//   return await sharp(qrPngBuffer)
-//     .greyscale()
-//     .threshold(128)
-//     .toColourspace('cmyk')
-//     .withMetadata({
-//       icc: 'USWebCoatedSWOP.icc'
-//     })
-//     .jpeg({
-//       quality: 100,
-//       chromaSubsampling: '4:4:4',
-//       // trellisQuantisation: true,
-//       // overshootDeringing: true
-//     })
-//     .toBuffer();
-// };
-
-// const generateCmykQr = async (audioUrl) => {
-//   // Step 1: Generate pure 1-bit QR
+//   // Step 1: Generate high-res 1-bit QR
 //   const qrBuffer = await QRCode.toBuffer(audioUrl, {
-//     width: 300,
+//     width: 1000, // High res helps prevent JPEG blurring
 //     margin: 1,
-//     errorCorrectionLevel: 'L',
+//     errorCorrectionLevel: 'H',
 //     color: { dark: '#000000', light: '#FFFFFF' }
 //   });
 
-//   // Step 2: Get raw grayscale data
+//   // Step 2: Extract raw grayscale data
 //   const { data, info } = await sharp(qrBuffer)
 //     .greyscale()
 //     .raw()
@@ -991,16 +960,20 @@ const getAllCustomeSpeechAsDictionary = async () => {
 //   const cmykBuffer = Buffer.alloc(totalPixels * 4);
 
 //   for (let i = 0; i < totalPixels; i++) {
-//     const isBlack = data[i] < 128; // Thresholding
+//     const isBlack = data[i] < 128; 
+//     if(data[i]!==0 && data[i]!==255){
+//       console.log(data[i]);
+//     }
 //     const idx = i * 4;
 
-//     cmykBuffer[idx]     = 0;               // Cyan
-//     cmykBuffer[idx + 1] = 0;               // Magenta
-//     cmykBuffer[idx + 2] = 0;               // Yellow
-//     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // Black (K)
+//     // Manually force all color channels to 0
+//     cmykBuffer[idx]     = 0; // C
+//     cmykBuffer[idx + 1] = 0; // M
+//     cmykBuffer[idx + 2] = 0; // Y
+//     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K
 //   }
 
-//   // Step 3: Output with correct profile metadata
+//   // Step 3: Create the JPG without profile conversion
 //   return await sharp(cmykBuffer, {
 //     raw: {
 //       width: info.width,
@@ -1008,47 +981,35 @@ const getAllCustomeSpeechAsDictionary = async () => {
 //       channels: 4
 //     }
 //   })
-//     // .withMetadata() // Useful if you need to keep print density info
+//     // Force the colorspace to CMYK WITHOUT applying an ICC profile
 //     .toColourspace('cmyk') 
 //     .jpeg({
 //       quality: 100,
-//       chromaSubsampling: '4:4:4'
+//       // CRITICAL: Disable chroma subsampling to prevent 
+//       // the black channel from leaking into the empty CMY channels
+//       // chromaSubsampling: '4:4:4', 
+//       trellisQuantisation: true,
+//       overshootDeringing: true
 //     })
 //     .toBuffer();
 // };
 
 
-
-
 const generateCmykQr = async (audioUrl) => {
-  const qrBuffer = await QRCode.toBuffer(audioUrl, {
-    width: 1000, 
+  return await sharp(await QRCode.toBuffer(audioUrl, {
+    width:300,
     margin: 1,
-    errorCorrectionLevel: 'H'
-  });
-
-  return new Promise((resolve, reject) => {
-    gm(qrBuffer)
-      .threshold(50, '%')      // Force pixels to be 0 or 255
-      .colorspace('CMYK')      // Convert to CMYK
-      .out('+profile', '*')    // Remove all embedded color profiles
-      // The "Level" operator here ensures the K channel is inverted 
-      // correctly if the library defaults to "Negative" CMYK logic
-      .operator('Cyan', 'Assign', 0)
-      .operator('Magenta', 'Assign', 0)
-      .operator('Yellow', 'Assign', 0)
-      .density(300, 300)
-      // This is the "secret sauce" for newspapers:
-      // It prevents the JPEG compressor from leaking black into other channels
-      .define('jpeg:sampling-factor=1x1,1x1,1x1,1x1') 
-      .quality(100)
-      .toBuffer('JPG', (err, buffer) => {
-        if (err) return reject(err);
-        resolve(buffer);
-      });
-  });
+    errorCorrectionLevel: 'L'
+  }))
+    .greyscale()
+    .threshold(128) // Ensure 0 or 255
+    .jpeg({
+      quality: 100,
+      chromaSubsampling: '4:4:4'
+    })
+    .withMetadata({ density: 300 }) // Essential for newspapers
+    .toBuffer();
 };
-
 
 
 /**
