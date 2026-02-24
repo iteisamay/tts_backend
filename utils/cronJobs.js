@@ -19,8 +19,8 @@ import pLimit from 'p-limit'
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_FILE_NAME = 'under_process_audio.mp3';
-const UPLOAD_BASE_PATH = path.join(__dirname, '..', 'uploads');
-const DEFAULT_AUDIO_PATH = path.join(__dirname, '..', 'uploads/audios', DEFAULT_FILE_NAME);
+const UPLOAD_BASE_PATH = path.join(__dirname, '..',"..", 'uploads');
+const DEFAULT_AUDIO_PATH = path.join(__dirname, '..',"..", 'uploads/audios', DEFAULT_FILE_NAME);
 const gcpTTSClient = new textToSpeech.TextToSpeechClient({
     keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
 });
