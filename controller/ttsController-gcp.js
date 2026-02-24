@@ -133,7 +133,6 @@ const createTts = async (req, res) => {
 
 const createTts_forFirst = async (req, res) => {
   const { title, text, user_code = 'test', pk_frontend } = req.body;
-  console.log(req.body);
   if (!title || title.trim() == "" || !text || text.trim() == "") {
     return res.status(500).send({ msg: "Please provide valid data." });
   }
@@ -142,7 +141,6 @@ const createTts_forFirst = async (req, res) => {
     const nextId = await getNextVal();
     const tts_id = `TTS${nextId}`;
 
-    //set default audio and generate qrcode and generate publictoken
     const default_audio = DEFAULT_FILE_NAME;
     const public_token = generatePublicToken();
     const QR_LINK = `${process.env.USER_PORTAL}/audio/${public_token}`;
@@ -157,9 +155,6 @@ const createTts_forFirst = async (req, res) => {
     console.error(err);
     return res.status(500).json({ error: err.message || "server error" });
   }
-
-  // await new Promise(resolve => setTimeout(resolve, 1000));
-  // return res.json(example);
 };
 
 
@@ -979,41 +974,32 @@ const getAllCustomeSpeechAsDictionary = async () => {
 const generateCmykQr = async (audioUrl) => {
   // Step 1: Generate pure 1-bit QR
   const qrBuffer = await QRCode.toBuffer(audioUrl, {
-    width: 600,
+    width: 300,
     margin: 1,
     errorCorrectionLevel: 'L',
-    color: {
-      dark: '#000000',
-      light: '#FFFFFF'
-    }
+    color: { dark: '#000000', light: '#FFFFFF' }
   });
 
-  // Step 2: Convert to 1-bit mask
-  const bw = await sharp(qrBuffer)
+  // Step 2: Get raw grayscale data
+  const { data, info } = await sharp(qrBuffer)
     .greyscale()
-    .threshold(128)
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const { data, info } = bw;
   const totalPixels = info.width * info.height;
-
-  // Step 3: Create CMYK buffer manually
   const cmykBuffer = Buffer.alloc(totalPixels * 4);
 
   for (let i = 0; i < totalPixels; i++) {
-    const pixel = data[i]; // 0 or 255
-
-    const isBlack = pixel === 0;
-
+    const isBlack = data[i] < 128; // Thresholding
     const idx = i * 4;
 
-    cmykBuffer[idx] = 0;                 // C
-    cmykBuffer[idx + 1] = 0;             // M
-    cmykBuffer[idx + 2] = 0;             // Y
-    cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K only
+    cmykBuffer[idx]     = 0;               // Cyan
+    cmykBuffer[idx + 1] = 0;               // Magenta
+    cmykBuffer[idx + 2] = 0;               // Yellow
+    cmykBuffer[idx + 3] = isBlack ? 255 : 0; // Black (K)
   }
 
+  // Step 3: Output with correct profile metadata
   return await sharp(cmykBuffer, {
     raw: {
       width: info.width,
@@ -1021,7 +1007,8 @@ const generateCmykQr = async (audioUrl) => {
       channels: 4
     }
   })
-    .toColourspace('cmyk')
+    // .withMetadata() // Useful if you need to keep print density info
+    .toColourspace('cmyk') 
     .jpeg({
       quality: 100,
       chromaSubsampling: '4:4:4'
