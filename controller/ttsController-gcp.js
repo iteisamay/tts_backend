@@ -971,50 +971,84 @@ const getAllCustomeSpeechAsDictionary = async () => {
 //     .toBuffer();
 // };
 
+// const generateCmykQr = async (audioUrl) => {
+//   // Step 1: Generate pure 1-bit QR
+//   const qrBuffer = await QRCode.toBuffer(audioUrl, {
+//     width: 300,
+//     margin: 1,
+//     errorCorrectionLevel: 'L',
+//     color: { dark: '#000000', light: '#FFFFFF' }
+//   });
+
+//   // Step 2: Get raw grayscale data
+//   const { data, info } = await sharp(qrBuffer)
+//     .greyscale()
+//     .raw()
+//     .toBuffer({ resolveWithObject: true });
+
+//   const totalPixels = info.width * info.height;
+//   const cmykBuffer = Buffer.alloc(totalPixels * 4);
+
+//   for (let i = 0; i < totalPixels; i++) {
+//     const isBlack = data[i] < 128; // Thresholding
+//     const idx = i * 4;
+
+//     cmykBuffer[idx]     = 0;               // Cyan
+//     cmykBuffer[idx + 1] = 0;               // Magenta
+//     cmykBuffer[idx + 2] = 0;               // Yellow
+//     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // Black (K)
+//   }
+
+//   // Step 3: Output with correct profile metadata
+//   return await sharp(cmykBuffer, {
+//     raw: {
+//       width: info.width,
+//       height: info.height,
+//       channels: 4
+//     }
+//   })
+//     // .withMetadata() // Useful if you need to keep print density info
+//     .toColourspace('cmyk') 
+//     .jpeg({
+//       quality: 100,
+//       chromaSubsampling: '4:4:4'
+//     })
+//     .toBuffer();
+// };
+
+
+
+
 const generateCmykQr = async (audioUrl) => {
-  // Step 1: Generate pure 1-bit QR
   const qrBuffer = await QRCode.toBuffer(audioUrl, {
-    width: 300,
+    width: 1000, 
     margin: 1,
-    errorCorrectionLevel: 'L',
-    color: { dark: '#000000', light: '#FFFFFF' }
+    errorCorrectionLevel: 'H'
   });
 
-  // Step 2: Get raw grayscale data
-  const { data, info } = await sharp(qrBuffer)
-    .greyscale()
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
-  const totalPixels = info.width * info.height;
-  const cmykBuffer = Buffer.alloc(totalPixels * 4);
-
-  for (let i = 0; i < totalPixels; i++) {
-    const isBlack = data[i] < 128; // Thresholding
-    const idx = i * 4;
-
-    cmykBuffer[idx]     = 0;               // Cyan
-    cmykBuffer[idx + 1] = 0;               // Magenta
-    cmykBuffer[idx + 2] = 0;               // Yellow
-    cmykBuffer[idx + 3] = isBlack ? 255 : 0; // Black (K)
-  }
-
-  // Step 3: Output with correct profile metadata
-  return await sharp(cmykBuffer, {
-    raw: {
-      width: info.width,
-      height: info.height,
-      channels: 4
-    }
-  })
-    // .withMetadata() // Useful if you need to keep print density info
-    .toColourspace('cmyk') 
-    .jpeg({
-      quality: 100,
-      chromaSubsampling: '4:4:4'
-    })
-    .toBuffer();
+  return new Promise((resolve, reject) => {
+    gm(qrBuffer)
+      .threshold(50, '%')      // Force pixels to be 0 or 255
+      .colorspace('CMYK')      // Convert to CMYK
+      .out('+profile', '*')    // Remove all embedded color profiles
+      // The "Level" operator here ensures the K channel is inverted 
+      // correctly if the library defaults to "Negative" CMYK logic
+      .operator('Cyan', 'Assign', 0)
+      .operator('Magenta', 'Assign', 0)
+      .operator('Yellow', 'Assign', 0)
+      .density(300, 300)
+      // This is the "secret sauce" for newspapers:
+      // It prevents the JPEG compressor from leaking black into other channels
+      .define('jpeg:sampling-factor=1x1,1x1,1x1,1x1') 
+      .quality(100)
+      .toBuffer('JPG', (err, buffer) => {
+        if (err) return reject(err);
+        resolve(buffer);
+      });
+  });
 };
+
+
 
 /**
 * Assigns line item type
