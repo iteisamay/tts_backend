@@ -20,8 +20,9 @@ import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { streamToBuffer } from "../utils/steamToBuffer.js";
 import { getElevenLabsCredits } from "../utils/getElevenLabsCredit.js";
 import { generatePublicToken } from "../utils/crypto.js";
-import e from "express";
+import gmLib from 'gm';
 configDotenv()
+const gm = gmLib.subClass({ imageMagick: true });
 
 const S3_BUCKET = process.env.S3_BUCKET;
 const REGION = process.env.AWS_REGION;
