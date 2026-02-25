@@ -20,6 +20,15 @@ import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import { streamToBuffer } from "../utils/steamToBuffer.js";
 import { getElevenLabsCredits } from "../utils/getElevenLabsCredit.js";
 import { generatePublicToken } from "../utils/crypto.js";
+
+
+import { execa } from "execa";
+import { tmpdir } from "os";
+import { join } from "path";
+import { randomUUID } from "crypto";
+import { readFile, writeFile, unlink } from "fs/promises";
+
+
 configDotenv()
 
 const S3_BUCKET = process.env.S3_BUCKET;
@@ -973,7 +982,55 @@ const getAllCustomeSpeechAsDictionary = async () => {
 //     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K
 //   }
 
-//   // Step 3: Create the JPG without profile conversion
+//   return await sharp(cmykBuffer, {
+//   raw: {
+//     width: info.width,
+//     height: info.height,
+//     channels: 4
+//   }
+// })
+//   .jpeg({
+//     quality: 100,
+//     chromaSubsampling: '4:4:4'
+//   })
+//   .withMetadata({density:300}) // no density first, test pure output
+//   .toBuffer();
+// };
+
+
+// const generateCmykQr = async (audioUrl) => {
+//   // Step 1: Generate QR
+//   const qrBuffer = await QRCode.toBuffer(audioUrl, {
+//     width: 600,              // Higher is safer for print
+//     margin: 1,
+//     errorCorrectionLevel: 'L'
+//   });
+
+//   // Step 2: Convert to pure 1-bit black/white
+//   const { data, info } = await sharp(qrBuffer)
+//     .greyscale()
+//     .threshold(128)
+//     .raw()
+//     .toBuffer({ resolveWithObject: true });
+
+//   const totalPixels = info.width * info.height;
+
+//   // Step 3: Create pure CMYK buffer (4 channels)
+//   const cmykBuffer = Buffer.alloc(totalPixels * 4);
+
+//   for (let i = 0; i < totalPixels; i++) {
+//     const pixel = data[i]; // 0 (black) or 255 (white)
+//     const isBlack = pixel === 0;
+
+//     const idx = i * 4;
+
+//     cmykBuffer[idx]     = 0;             // C
+//     cmykBuffer[idx + 1] = 0;             // M
+//     cmykBuffer[idx + 2] = 0;             // Y
+//     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K only
+//   }
+
+//   // Step 4: Save as uncompressed CMYK TIFF
 //   return await sharp(cmykBuffer, {
 //     raw: {
 //       width: info.width,
@@ -981,34 +1038,74 @@ const getAllCustomeSpeechAsDictionary = async () => {
 //       channels: 4
 //     }
 //   })
-//     // Force the colorspace to CMYK WITHOUT applying an ICC profile
-//     .toColourspace('cmyk') 
-//     .jpeg({
-//       quality: 100,
-//       // CRITICAL: Disable chroma subsampling to prevent 
-//       // the black channel from leaking into the empty CMY channels
-//       // chromaSubsampling: '4:4:4', 
-//       trellisQuantisation: true,
-//       overshootDeringing: true
+//     .tiff({
+//       compression: 'none'
+//     })
+//     .withMetadata({
+//       density: 300   // 300 DPI for newspaper
 //     })
 //     .toBuffer();
 // };
 
 
+
 const generateCmykQr = async (audioUrl) => {
-  return await sharp(await QRCode.toBuffer(audioUrl, {
-    width:300,
+  // Step 1: Generate high-res QR (black/white)
+  const qrBuffer = await QRCode.toBuffer(audioUrl, {
+    width: 1000,
     margin: 1,
-    errorCorrectionLevel: 'L'
-  }))
-    .greyscale()
-    .threshold(128) // Ensure 0 or 255
-    .jpeg({
-      quality: 100,
-      chromaSubsampling: '4:4:4'
-    })
-    .withMetadata({ density: 300 }) // Essential for newspapers
-    .toBuffer();
+    errorCorrectionLevel: "H",
+    color: { dark: "#000000", light: "#FFFFFF" }
+  });
+
+  // Step 2: Convert to pure K-only CMYK TIFF (intermediate)
+  const tempId = randomUUID();
+  const tempTiff = join(tmpdir(), `${tempId}.tif`);
+  const tempJpg = join(tmpdir(), `${tempId}.jpg`);
+
+  await sharp(qrBuffer)
+    .toColourspace("cmyk")        // convert properly
+    .withMetadata({ density: 300 })
+    .tiff({ compression: "none" }) // lossless intermediate
+    .toFile(tempTiff);
+
+  // Step 3: Use ImageMagick for proper CMYK JPEG encoding
+  // await execa("magick", [
+  //   tempTiff,
+  //   "-colorspace", "CMYK",
+  //   "-channel", "CMY", "-evaluate", "set", "0",
+  //   "+channel",
+  //   "-sampling-factor", "4:4:4",
+  //   "-quality", "100",
+  //   "-define", "jpeg:colorspace=CMYK",
+  //   "-density", "300",
+  //   tempJpg
+  // ]);
+
+  await execa("magick", [
+  tempTiff,
+
+  "-colorspace", "Gray",
+  "-type", "Bilevel",
+  "-colorspace", "CMYK",
+  "-channel", "CMY",
+  "-evaluate", "set", "0",
+  "+channel",
+  "-sampling-factor", "4:4:4",
+  "-quality", "100",
+  "-define", "jpeg:colorspace=CMYK",
+  "-density", "300",
+  tempJpg
+]);
+
+  // Step 4: Read final JPEG
+  const finalBuffer = await readFile(tempJpg);
+
+  // Cleanup temp files
+  await unlink(tempTiff);
+  await unlink(tempJpg);
+
+  return finalBuffer;
 };
 
 

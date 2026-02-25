@@ -4,6 +4,7 @@ import cors from 'cors';
 import ttsRouter from "./router/ttsRouter.js";
 import authRouter from "./router/authRouter.js";
 import pgClient from "./db/pgClient.js";
+import { execa } from "execa";
 
 import {startTtsWorker,generateAudioBufferAndSaveThroughLlm} from  "./utils/cronJobs.js"
 
@@ -27,6 +28,15 @@ app.use(express.json());
 
 app.use('/s1/api/v1/tts', ttsRouter);
 app.use('/s1/api/v1/auth', authRouter);
+
+
+
+const test = async () => {
+  const { stdout } = await execa("magick", ["-version"]);
+  console.log(stdout);
+};
+
+test();
 
 
 
