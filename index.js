@@ -32,7 +32,7 @@ app.use('/s1/api/v1/auth', authRouter);
 
 
 const test = async () => {
-  const { stdout } = await execa("magick", ["-version"]);
+  const { stdout } = await execa("convert", ["-version"]);
   console.log(stdout);
 };
 

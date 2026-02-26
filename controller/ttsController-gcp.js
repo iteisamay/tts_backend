@@ -1082,7 +1082,7 @@ const generateCmykQr = async (audioUrl) => {
   //   tempJpg
   // ]);
 
-  await execa("magick", [
+  await execa("convert", [
   tempTiff,
 
   "-colorspace", "Gray",
