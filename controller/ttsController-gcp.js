@@ -208,7 +208,8 @@ const getQrAudioByFrontendKey = async (req, res) => {
     return res.status(500).send({ msg: "Invalid ID." });
   }
 
-  const getDataQ = "select audio_key,qr_key from tbl_tts_record where frontend_pk = $1 and (tts_generated='YES' or tts_generated='COMPLETED');";
+  const getDataQ = "select audio_key,qr_key from tbl_tts_record where frontend_pk = $1;";
+  // const getDataQ = "select audio_key,qr_key from tbl_tts_record where frontend_pk = $1 and (tts_generated='YES' or tts_generated='COMPLETED');";
   try {
     const { rows, rowCount } = await pgClient.query(getDataQ, [id]);
     if (rowCount == 0) {
