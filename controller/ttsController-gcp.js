@@ -158,10 +158,10 @@ const createTts_forFirst = async (req, res) => {
     const { rows } = await pgClient.query(insertQ, [tts_id, title, text, pk_frontend, default_audio, fileName, public_token]);
     createAdminLog(`NEW STORY UPLOADED ID: ${tts_id}`, user_code);
     console.log(rows);
-    return res.status(200).send({ msg: "Data Submitted for qr generation." });
+    return res.status(200).send({ msg: "Data Submitted for qr generation.",qr_file:fileName,audio_link:QR_LINK });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: err.message || "server error" });
+    return res.status(500).json({ error: err.message || "server error",qr_file:null,audio_link:null });
   }
 };
 
@@ -950,102 +950,6 @@ const getAllCustomeSpeechAsDictionary = async () => {
   }
 }
 
-// const generateCmykQr = async (audioUrl) => {
-//   // Step 1: Generate high-res 1-bit QR
-//   const qrBuffer = await QRCode.toBuffer(audioUrl, {
-//     width: 1000, // High res helps prevent JPEG blurring
-//     margin: 1,
-//     errorCorrectionLevel: 'H',
-//     color: { dark: '#000000', light: '#FFFFFF' }
-//   });
-
-//   // Step 2: Extract raw grayscale data
-//   const { data, info } = await sharp(qrBuffer)
-//     .greyscale()
-//     .raw()
-//     .toBuffer({ resolveWithObject: true });
-
-//   const totalPixels = info.width * info.height;
-//   const cmykBuffer = Buffer.alloc(totalPixels * 4);
-
-//   for (let i = 0; i < totalPixels; i++) {
-//     const isBlack = data[i] < 128; 
-//     if(data[i]!==0 && data[i]!==255){
-//       console.log(data[i]);
-//     }
-//     const idx = i * 4;
-
-//     // Manually force all color channels to 0
-//     cmykBuffer[idx]     = 0; // C
-//     cmykBuffer[idx + 1] = 0; // M
-//     cmykBuffer[idx + 2] = 0; // Y
-//     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K
-//   }
-
-//   return await sharp(cmykBuffer, {
-//   raw: {
-//     width: info.width,
-//     height: info.height,
-//     channels: 4
-//   }
-// })
-//   .jpeg({
-//     quality: 100,
-//     chromaSubsampling: '4:4:4'
-//   })
-//   .withMetadata({density:300}) // no density first, test pure output
-//   .toBuffer();
-// };
-
-
-// const generateCmykQr = async (audioUrl) => {
-//   // Step 1: Generate QR
-//   const qrBuffer = await QRCode.toBuffer(audioUrl, {
-//     width: 600,              // Higher is safer for print
-//     margin: 1,
-//     errorCorrectionLevel: 'L'
-//   });
-
-//   // Step 2: Convert to pure 1-bit black/white
-//   const { data, info } = await sharp(qrBuffer)
-//     .greyscale()
-//     .threshold(128)
-//     .raw()
-//     .toBuffer({ resolveWithObject: true });
-
-//   const totalPixels = info.width * info.height;
-
-//   // Step 3: Create pure CMYK buffer (4 channels)
-//   const cmykBuffer = Buffer.alloc(totalPixels * 4);
-
-//   for (let i = 0; i < totalPixels; i++) {
-//     const pixel = data[i]; // 0 (black) or 255 (white)
-//     const isBlack = pixel === 0;
-
-//     const idx = i * 4;
-
-//     cmykBuffer[idx]     = 0;             // C
-//     cmykBuffer[idx + 1] = 0;             // M
-//     cmykBuffer[idx + 2] = 0;             // Y
-//     cmykBuffer[idx + 3] = isBlack ? 255 : 0; // K only
-//   }
-
-//   // Step 4: Save as uncompressed CMYK TIFF
-//   return await sharp(cmykBuffer, {
-//     raw: {
-//       width: info.width,
-//       height: info.height,
-//       channels: 4
-//     }
-//   })
-//     .tiff({
-//       compression: 'none'
-//     })
-//     .withMetadata({
-//       density: 300   // 300 DPI for newspaper
-//     })
-//     .toBuffer();
-// };
 
 
 
@@ -1068,19 +972,6 @@ const generateCmykQr = async (audioUrl) => {
     .withMetadata({ density: 300 })
     .tiff({ compression: "none" }) // lossless intermediate
     .toFile(tempTiff);
-
-  // Step 3: Use ImageMagick for proper CMYK JPEG encoding
-  // await execa("magick", [
-  //   tempTiff,
-  //   "-colorspace", "CMYK",
-  //   "-channel", "CMY", "-evaluate", "set", "0",
-  //   "+channel",
-  //   "-sampling-factor", "4:4:4",
-  //   "-quality", "100",
-  //   "-define", "jpeg:colorspace=CMYK",
-  //   "-density", "300",
-  //   tempJpg
-  // ]);
 
   await execa("convert", [
   tempTiff,
