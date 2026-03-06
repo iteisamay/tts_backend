@@ -1,8 +1,10 @@
 FROM node:20
 
 RUN apt-get update && \
-    apt-get install -y imagemagick && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y \
+    imagemagick \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 

@@ -12,15 +12,17 @@ import { chunkText } from '../utils/chunk.js';
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import { streamToBuffer } from "../utils/steamToBuffer.js";
 import pLimit from 'p-limit'
-
+import { exec } from 'child_process';
+import os from 'os';
+import { v4 as uuidv4 } from 'uuid';
 
 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_FILE_NAME = 'under_process_audio.mp3';
-const UPLOAD_BASE_PATH = path.join(__dirname, '..',"..", 'uploads');
-const DEFAULT_AUDIO_PATH = path.join(__dirname, '..',"..", 'uploads/audios', DEFAULT_FILE_NAME);
+const UPLOAD_BASE_PATH = path.join(__dirname, '..', "..", 'uploads');
+const DEFAULT_AUDIO_PATH = path.join(__dirname, '..', "..", 'uploads/audios', DEFAULT_FILE_NAME);
 const gcpTTSClient = new textToSpeech.TextToSpeechClient({
     keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
 });
@@ -158,9 +160,9 @@ async function generateAudioBufferAndSaveThroughLlm() {
             let finalAudio;
 
             if (job.llm_name === "GOOGLE_API") {
-                finalAudio = await generateWithGoogle(job.tts_text);
+                finalAudio = await generateWithGoogleV2(job.tts_text);
             } else if (job.llm_name === "ELEVENLAB_API") {
-                finalAudio = await generateWithElevenLabs(job.tts_text);
+                finalAudio = await generateWithElevenLabsV2(job.tts_text);
             } else {
                 throw new Error("Invalid LLM");
             }
@@ -170,7 +172,7 @@ async function generateAudioBufferAndSaveThroughLlm() {
             const random5 = Math.floor(10000 + Math.random() * 90000);
             const fileName = `${timestamp}_${random5}.mp3`;
 
-            const filePath = path.join(__dirname, "..","..","uploads/audios", fileName);
+            const filePath = path.join(__dirname, "..", "..", "uploads/audios", fileName);
 
             fs.writeFileSync(filePath, finalAudio);
 
@@ -232,98 +234,197 @@ async function generateWithGoogle(text) {
     return Buffer.concat(audioBuffers);
 }
 
+async function generateWithGoogleV2(text) {
+    if (!text) throw new Error("Text is required");
 
+    const chunks = chunkText(text);
+    const audioBuffers = [];
 
-// async function generateWithElevenLabs(text) {
-//     // const MAX_CHARS = 5000;
+    for (const chunk of chunks) {
+        const processedText = await applyCustomPronunciation(chunk);
 
-//     const chunks =[text];
-//     const audioBuffers = await Promise.all(
-//         chunks.map(async (chunk) => {
-//             const audioStream =
-//                 await elevenLabClient.textToSpeech.convert(
-//                     "DGTOOUoGpoP6UZ9uSWfA",
-//                     {
-//                         text: chunk,
-//                         modelId: "eleven_v3",
-//                         outputFormat: "mp3_44100_128",
-//                     }
-//                 );
+        const ssmlPayload =
+            `<speak><prosody pitch="-2st">${processedText}</prosody></speak>`;
 
-//             return streamToBuffer(audioStream);
-//         })
-//     );
-//     const concated_buffer = Buffer.concat(audioBuffers);
-//     return concated_buffer;
-// }
+        const [response] = await gcpTTSClient.synthesizeSpeech({
+            input: { ssml: ssmlPayload },
+            voice: {
+                languageCode: "bn-IN",
+                name: "bn-IN-Wavenet-A",
+            },
+            audioConfig: {
+                audioEncoding: "MP3",
+                speakingRate: 1.18,
+                pitch: 1.3,
+            },
+        });
+
+        const buffer = Buffer.isBuffer(response.audioContent)
+            ? response.audioContent
+            : Buffer.from(response.audioContent, "base64");
+
+        audioBuffers.push(buffer);
+    }
+
+    // ⚠️ Raw broken concat
+    const rawBuffer = Buffer.concat(audioBuffers);
+
+    // ---- FIX CONTAINER ----
+    const tempId = uuidv4();
+    const inputPath = path.join(os.tmpdir(), `${tempId}_raw.mp3`);
+    const outputPath = path.join(os.tmpdir(), `${tempId}_fixed.mp3`);
+
+    fs.writeFileSync(inputPath, rawBuffer);
+    // const ffmpegPath = "C:\\Users\\subhradip.majumder\\Desktop\\ffmpeg-master-latest-win64-gpl-shared\\ffmpeg-master-latest-win64-gpl-shared\\bin\\ffmpeg.exe";
+    const ffmpegPath = "ffmpeg";
+
+    await new Promise((resolve, reject) => {
+        exec(
+            `"${ffmpegPath}" -y -i "${inputPath}" -acodec libmp3lame -qscale:a 2 -write_xing 1 "${outputPath}"`,
+            (error) => {
+                if (error) reject(error);
+                else resolve();
+            }
+        );
+    });
+
+    const fixedBuffer = fs.readFileSync(outputPath);
+
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputPath);
+
+    return fixedBuffer;
+}
 
 
 
 async function generateWithElevenLabs(text) {
-  if (!text) throw new Error("Text is required");
+    if (!text) throw new Error("Text is required");
 
-  const MAX_CHARS = 1000;
-  const CONCURRENCY = 3;
+    const MAX_CHARS = 1000;
+    const CONCURRENCY = 3;
 
-  const chunks = splitTextByDanda(text, MAX_CHARS);
+    const chunks = splitTextByDanda(text, MAX_CHARS);
 
-  const limit = pLimit(CONCURRENCY);
+    const limit = pLimit(CONCURRENCY);
 
-  const audioBuffers = await Promise.all(
-    chunks.map(chunk =>
-      limit(async () => {
-        const audioStream =
-          await elevenLabClient.textToSpeech.convert(
-            "DGTOOUoGpoP6UZ9uSWfA",
-            {
-              text: chunk,
-              modelId: "eleven_v3",
-              outputFormat: "mp3_44100_128",
-            }
-          );
+    const audioBuffers = await Promise.all(
+        chunks.map(chunk =>
+            limit(async () => {
+                const audioStream =
+                    await elevenLabClient.textToSpeech.convert(
+                        "DGTOOUoGpoP6UZ9uSWfA",
+                        {
+                            text: chunk,
+                            modelId: "eleven_v3",
+                            outputFormat: "mp3_44100_128",
+                        }
+                    );
 
-        return streamToBuffer(audioStream);
-      })
-    )
-  );
+                return streamToBuffer(audioStream);
+            })
+        )
+    );
 
-  return Buffer.concat(audioBuffers);
+    return Buffer.concat(audioBuffers);
 }
 
+
+
+async function generateWithElevenLabsV2(text) {
+    if (!text) throw new Error("Text is required");
+
+    const MAX_CHARS = 1000;
+    const CONCURRENCY = 3;
+
+    const chunks = splitTextByDanda(text, MAX_CHARS);
+    const limit = pLimit(CONCURRENCY);
+
+    const audioBuffers = await Promise.all(
+        chunks.map(chunk =>
+            limit(async () => {
+                const audioStream =
+                    await elevenLabClient.textToSpeech.convert(
+                        "DGTOOUoGpoP6UZ9uSWfA",
+                        {
+                            text: chunk,
+                            modelId: "eleven_v3",
+                            outputFormat: "mp3_44100_128",
+                        }
+                    );
+
+                return streamToBuffer(audioStream);
+            })
+        )
+    );
+
+    // ⚠️ This concat creates invalid MP3 container
+    const rawBuffer = Buffer.concat(audioBuffers);
+
+    // Create temp files
+    const tempId = uuidv4();
+    const inputPath = path.join(os.tmpdir(), `${tempId}_raw.mp3`);
+    const outputPath = path.join(os.tmpdir(), `${tempId}_fixed.mp3`);
+
+    fs.writeFileSync(inputPath, rawBuffer);
+    // const ffmpegPath = "C:\\Users\\subhradip.majumder\\Desktop\\ffmpeg-master-latest-win64-gpl-shared\\ffmpeg-master-latest-win64-gpl-shared\\bin\\ffmpeg.exe";
+    const ffmpegPath = "ffmpeg";
+    await new Promise((resolve, reject) => {
+        exec(
+            `"${ffmpegPath}" -y -i "${inputPath}" -acodec libmp3lame -qscale:a 2 -write_xing 1 "${outputPath}"`,
+            (error) => {
+                if (error) reject(error);
+                else resolve();
+            }
+        );
+    });
+
+    const fixedBuffer = fs.readFileSync(outputPath);
+
+    // Cleanup
+    fs.unlinkSync(inputPath);
+    fs.unlinkSync(outputPath);
+
+    return fixedBuffer;
+}
+
+
+
+
 function splitTextByDanda(text, maxChars = 1000) {
-  if (!text) return [];
-  const sentences = text.split("।")
-    .map(s => s.trim())
-    .filter(Boolean);
+    if (!text) return [];
+    const sentences = text.split("।")
+        .map(s => s.trim())
+        .filter(Boolean);
 
-  const chunks = [];
-  let currentChunk = "";
+    const chunks = [];
+    let currentChunk = "";
 
-  for (let i = 0; i < sentences.length; i++) {
-    const sentence = sentences[i] + "।"; // add back danda
+    for (let i = 0; i < sentences.length; i++) {
+        const sentence = sentences[i] + "।"; // add back danda
 
-    // If adding this sentence exceeds limit → push current chunk
-    if ((currentChunk + " " + sentence).trim().length > maxChars) {
-      if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-        currentChunk = sentence;
-      } else {
-        // Edge case: single sentence longer than maxChars
-        chunks.push(sentence.slice(0, maxChars));
-        currentChunk = sentence.slice(maxChars);
-      }
-    } else {
-      currentChunk = currentChunk
-        ? currentChunk + " " + sentence
-        : sentence;
+        // If adding this sentence exceeds limit → push current chunk
+        if ((currentChunk + " " + sentence).trim().length > maxChars) {
+            if (currentChunk.trim()) {
+                chunks.push(currentChunk.trim());
+                currentChunk = sentence;
+            } else {
+                // Edge case: single sentence longer than maxChars
+                chunks.push(sentence.slice(0, maxChars));
+                currentChunk = sentence.slice(maxChars);
+            }
+        } else {
+            currentChunk = currentChunk
+                ? currentChunk + " " + sentence
+                : sentence;
+        }
     }
-  }
 
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
+    if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+    }
 
-  return chunks;
+    return chunks;
 }
 
 

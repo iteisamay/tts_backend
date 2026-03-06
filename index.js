@@ -9,7 +9,7 @@ import { execa } from "execa";
 import {startTtsWorker,generateAudioBufferAndSaveThroughLlm} from  "./utils/cronJobs.js"
 
 configDotenv();
-startTtsWorker();
+// startTtsWorker();
 generateAudioBufferAndSaveThroughLlm();
 const PORT = process.env.PORT || 3000;
 
@@ -31,12 +31,17 @@ app.use('/s1/api/v1/auth', authRouter);
 
 
 
-const test = async () => {
+const test1 = async () => {
   const { stdout } = await execa("convert", ["-version"]);
   console.log(stdout);
 };
+const test2 = async () => {
+  const { stdout } = await execa("ffmpeg", ["-version"]);
+  console.log(stdout);
+};
 
-test();
+test1();
+test2();
 
 
 
