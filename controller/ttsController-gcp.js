@@ -642,7 +642,7 @@ const getPaginatedTtsRecords = async (req, res) => {
   try {
     let { start_date, end_date, page_length, page_number } = req.body;
 
-    const limit = Number(page_length) || 10;
+    const limit = Number(page_length) || 20;
     const page = Number(page_number) || 1;
     const offset = (page - 1) * limit;
 
