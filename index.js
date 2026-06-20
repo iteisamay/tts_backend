@@ -6,10 +6,11 @@ import authRouter from "./router/authRouter.js";
 import pgClient from "./db/pgClient.js";
 import { execa } from "execa";
 
-import {startTtsWorker,generateAudioBufferAndSaveThroughLlm} from  "./utils/cronJobs.js"
+import {startTtsWorker,generateAudioBufferAndSaveThroughLlm,autoTtsWorker} from  "./utils/cronJobs.js"
 
 configDotenv();
-// startTtsWorker();
+startTtsWorker();
+autoTtsWorker();
 generateAudioBufferAndSaveThroughLlm();
 const PORT = process.env.PORT || 3000;
 
@@ -40,8 +41,8 @@ const test2 = async () => {
   console.log(stdout);
 };
 
-test1();
-test2();
+// test1();
+// test2();
 
 
 

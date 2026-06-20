@@ -1,5 +1,5 @@
 import express from 'express';
-import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst,createTts_forUpdate,getQrAudioByFrontendKey,getTodaysData,deleteAudioById, getUserData, toogleUserAccessById, createSpeechOnlyWithElevenLabs, createSpeechOnLlmNumber, getElevenLabcreditData, getAllpublicToken } from '../controller/ttsController-gcp.js';
+import { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst,createTts_forUpdate,getQrAudioByFrontendKey,getTodaysData,deleteAudioById, getUserData, toogleUserAccessById, createSpeechOnlyWithElevenLabs, createSpeechOnLlmNumber, getElevenLabcreditData, getAllpublicToken, getReportByDate } from '../controller/ttsController-gcp.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -77,5 +77,8 @@ ttsRouter.get('/llm/get/credit/eleven',getElevenLabcreditData);
 
 //get all id
 ttsRouter.get('/get-pub-token',getAllpublicToken);
+
+//get report
+ttsRouter.post('/get-report',getReportByDate);
 
 export default ttsRouter;

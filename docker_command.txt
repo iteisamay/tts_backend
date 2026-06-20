@@ -1,1 +1,5 @@
+docker build -t backend_1:latest .
 docker run -d --env-file .env -p 5050:5050 backend_1
+docker rm <container id>
+
+sudo docker exec -it ab1533872b39 /bin/sh

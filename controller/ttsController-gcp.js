@@ -27,7 +27,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { randomUUID } from "crypto";
 import { readFile, writeFile, unlink } from "fs/promises";
-
+import { Parser } from 'json2csv';
 
 configDotenv()
 
@@ -47,6 +47,16 @@ const AUDIO_UPLOAD_BASE_PATH = path.join(__dirname, '..', '..', 'uploads', 'audi
 const gcpTTSClient = new textToSpeech.TextToSpeechClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
 });
+
+const language_data = {
+  1: "Bengali",
+  2: "Bengali",
+  3: "English",
+  4: "English",
+  5: "Hindi",
+  6: "Hindi",
+}
+
 
 const createTts = async (req, res) => {
   const { title, text, tone = "default", voice = "bn-IN-Wavenet-A", language = "bn-IN", speakingRate = 1.0, pitch = 0.0 } = req.body;
@@ -158,10 +168,10 @@ const createTts_forFirst = async (req, res) => {
     const { rows } = await pgClient.query(insertQ, [tts_id, title, text, pk_frontend, default_audio, fileName, public_token]);
     createAdminLog(`NEW STORY UPLOADED ID: ${tts_id}`, user_code);
     console.log(rows);
-    return res.status(200).send({ msg: "Data Submitted for qr generation.",qr_file:fileName,audio_link:QR_LINK });
+    return res.status(200).send({ msg: "Data Submitted for qr generation.", qr_file: fileName, audio_link: QR_LINK });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: err.message || "server error",qr_file:null,audio_link:null });
+    return res.status(500).json({ error: err.message || "server error", qr_file: null, audio_link: null });
   }
 };
 
@@ -226,29 +236,34 @@ const getQrAudioByFrontendKey = async (req, res) => {
 }
 
 const createSpeechOnLlmNumber = async (req, res) => {
-  let { llm_name, text, user_code = "test",id } = req.body;
+  let { llm_name, text, user_code = "test", id, title, lang_id } = req.body;
   if (!text) {
     return res.status(400).json({ error: "Text is required" });
   }
   llm_name = parseInt(llm_name);
   if (llm_name === 1) {
     // createSpeechOnly(req,res);
-    const updateQ="update tbl_tts_record set tts_text=$1, tts_generated='SET FOR GENERATION', llm_name='GOOGLE_API' where tts_id=$2;";
-    const {rowCount}=await pgClient.query(updateQ,[text,id]);
-    if(rowCount===1){
+    const updateQ = "update tbl_tts_record set tts_text=$1, tts_generated='SET FOR GENERATION', llm_name='GOOGLE_API',lang_id=$3 where tts_id=$2;";
+    const { rowCount } = await pgClient.query(updateQ, [text, id, lang_id]);
+    if (rowCount === 1) {
+      console.log(id, user_code);
+      createAdminLog(`Audio Set to generate : ${title}`, user_code);
       return res.status(200).send({ msg: "Audio is set to generate." });
-    }else{
-      return res.status(500).send({msg:"Error while set to generate."});
+    } else {
+      createAdminLog(`Failed to set Audio generatation : ${title}`, user_code);
+      return res.status(500).send({ msg: "Error while set to generate." });
     }
 
   } else if (llm_name === 2) {
     // createSpeechOnlyWithElevenLabs(req,res);
-     const updateQ="update tbl_tts_record set tts_text=$1, tts_generated='SET FOR GENERATION', llm_name='ELEVENLAB_API' where tts_id=$2;";
-    const {rowCount}=await pgClient.query(updateQ,[text,id]);
-    if(rowCount===1){
+    const updateQ = "update tbl_tts_record set tts_text=$1, tts_generated='SET FOR GENERATION', llm_name='ELEVENLAB_API',lang_id=$3,language=$4 where tts_id=$2;";
+    const { rowCount } = await pgClient.query(updateQ, [text, id, lang_id, language_data[lang_id]]);
+    if (rowCount === 1) {
+      createAdminLog(`Audio Set to generate : ${title}`, user_code);
       return res.status(200).send({ msg: "Audio is set to generate." });
-    }else{
-      return res.status(500).send({msg:"Error while set to generate."});
+    } else {
+      createAdminLog(`Audio Set to generate : ${title}`, user_code);
+      return res.status(500).send({ msg: "Error while set to generate." });
     }
   } else {
     res.status(500).json({
@@ -975,20 +990,20 @@ const generateCmykQr = async (audioUrl) => {
     .toFile(tempTiff);
 
   await execa("convert", [
-  tempTiff,
+    tempTiff,
 
-  "-colorspace", "Gray",
-  "-type", "Bilevel",
-  "-colorspace", "CMYK",
-  "-channel", "CMY",
-  "-evaluate", "set", "0",
-  "+channel",
-  "-sampling-factor", "4:4:4",
-  "-quality", "100",
-  "-define", "jpeg:colorspace=CMYK",
-  "-density", "300",
-  tempJpg
-]);
+    "-colorspace", "Gray",
+    "-type", "Bilevel",
+    "-colorspace", "CMYK",
+    "-channel", "CMY",
+    "-evaluate", "set", "0",
+    "+channel",
+    "-sampling-factor", "4:4:4",
+    "-quality", "100",
+    "-define", "jpeg:colorspace=CMYK",
+    "-density", "300",
+    tempJpg
+  ]);
 
   // Step 4: Read final JPEG
   const finalBuffer = await readFile(tempJpg);
@@ -1291,10 +1306,47 @@ const getAllpublicToken = async (req, res) => {
   }
 }
 
+/**
+ * Assigns line item type
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+const getReportByDate = async (req, res) => {
+  /** @type {{fromdate:String,todate:String}} */
+  const { fromdate, todate } = req.body;
+
+  try {
+    const reportQ = `
+      SELECT tts_time, title, language, hit_count
+      FROM tbl_tts_record
+      WHERE tts_time BETWEEN $1 AND $2;
+    `;
+
+    const { rows } = await pgClient.query(reportQ, [fromdate, todate]);
+
+    // CSV fields
+    const fields = ['tts_time', 'title', 'language', 'hit_count'];
+
+    const json2csvParser = new Parser({ fields });
+
+    const csv = json2csvParser.parse(rows);
+
+    // Send CSV as downloadable file
+    res.header('Content-Type', 'text/csv');
+    res.attachment('report.csv');
+
+    return res.send(csv);
+
+  } catch (error) {
+    console.log(error);
+    return res.status(500).send({ msg: 'Error: ' + error.message });
+  }
+};
 
 
 
 
 
 
-export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById, createSpeechOnlyWithElevenLabs, createSpeechOnLlmNumber, getElevenLabcreditData, createSpeechOnlyWithElevenLabsForCorn, getAllpublicToken };
+
+export { createTts, saveTtsToDb, getPaginatedTtsRecords, updateTtsSpeech, downloadProxy, createSpeechOnly, getAudioPresignedUrl, finalizeTts, saveCustomSpeech, getAllCustomeSpeech, getCustom, storeInMechine, updateTtsSpeechv2, uploadImage, updateDataByRowId, getAudioDataById, createTts_forFirst, createSpeechOnlyForCron, generateCmykQr, saveQRImage, formatToISODuration, createTts_forUpdate, getQrAudioByFrontendKey, getTodaysData, deleteAudioById, getUserData, toogleUserAccessById, createSpeechOnlyWithElevenLabs, createSpeechOnLlmNumber, getElevenLabcreditData, createSpeechOnlyWithElevenLabsForCorn, getAllpublicToken, getReportByDate };

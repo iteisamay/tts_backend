@@ -28,6 +28,16 @@ const gcpTTSClient = new textToSpeech.TextToSpeechClient({
 });
 const elevenLabClient = new ElevenLabsClient({ apiKey: process.env.ELEVENLABS_API_KEY_2 });
 
+const voiceId = {
+    1: ["DGTOOUoGpoP6UZ9uSWfA", "Bengali"],
+    2: ["kvQSb3naDTi3sgHwwBC1", "Bengali"],
+    3: ["emceOb89ymaMozXE8Kfw", "English"],
+    4: ["ZZaFmqC4m1spoEWv9Jcp", "English"],
+    5: ["hdkYGMdbdWZpANLZvmnk", "Hindi"],
+    6: ["kvQSb3naDTi3sgHwwBC1", "Hindi"],
+}
+
+
 
 /**
  * Cleans and applies custom pronunciations using SSML <sub> tags.
@@ -127,9 +137,22 @@ async function startTtsWorker() {
     }
 }
 
+function autoTtsWorker() {
+    console.log("Auto generation worker started");
+    // cron.schedule('30 5 * * *', async() => {
+    cron.schedule('*/5 * * * *', async() => {
+        console.log("5 min cron running...");
+        const updateQ=`update tbl_tts_record 
+         set tts_generated='SET FOR GENERATION',generate_proc='AUTO' where tts_generated='NO'`;
+
+         await pgClient.query(updateQ);
+    });
+    
+}
+
 async function generateAudioBufferAndSaveThroughLlm() {
     const getNonGeneratedData = `
-    select tts_id, tts_text, llm_name 
+    select tts_id, tts_text, llm_name,lang_id 
     from tbl_tts_record 
     where tts_generated='SET FOR GENERATION'
     order by tts_id 
@@ -162,27 +185,31 @@ async function generateAudioBufferAndSaveThroughLlm() {
             if (job.llm_name === "GOOGLE_API") {
                 finalAudio = await generateWithGoogleV2(job.tts_text);
             } else if (job.llm_name === "ELEVENLAB_API") {
-                finalAudio = await generateWithElevenLabsV2(job.tts_text);
+                finalAudio = await generateWithElevenLabsV2(job.tts_text, job.lang_id);
             } else {
                 throw new Error("Invalid LLM");
             }
+
+
 
             // ✅ Save file
             const timestamp = Date.now();
             const random5 = Math.floor(10000 + Math.random() * 90000);
             const fileName = `${timestamp}_${random5}.mp3`;
 
-            const filePath = path.join(__dirname, "..", "..", "uploads/audios", fileName);
+            const filePath = path.join(__dirname,"..", "..", "uploads/audios", fileName);
 
+            console.log("Filepath:- ",filePath);
+            console.log(finalAudio.length);
             fs.writeFileSync(filePath, finalAudio);
 
             // ✅ Update DB as completed
             await pgClient.query(
                 `update tbl_tts_record 
          set tts_generated='COMPLETED',
-             audio_key=$1
+             audio_key=$1,language=$3
          where tts_id=$2`,
-                [fileName, job.tts_id]
+                [fileName, job.tts_id, voiceId[job.lang_id][1]]
             );
 
         } catch (err) {
@@ -331,7 +358,7 @@ async function generateWithElevenLabs(text) {
 
 
 
-async function generateWithElevenLabsV2(text) {
+async function generateWithElevenLabsV2(text, lang_id) {
     if (!text) throw new Error("Text is required");
 
     const MAX_CHARS = 1000;
@@ -339,13 +366,13 @@ async function generateWithElevenLabsV2(text) {
 
     const chunks = splitTextByDanda(text, MAX_CHARS);
     const limit = pLimit(CONCURRENCY);
-
+    console.log(lang_id, voiceId[lang_id]);
     const audioBuffers = await Promise.all(
         chunks.map(chunk =>
             limit(async () => {
                 const audioStream =
                     await elevenLabClient.textToSpeech.convert(
-                        "DGTOOUoGpoP6UZ9uSWfA",
+                        voiceId[lang_id][0],
                         {
                             text: chunk,
                             modelId: "eleven_v3",
@@ -380,7 +407,6 @@ async function generateWithElevenLabsV2(text) {
     });
 
     const fixedBuffer = fs.readFileSync(outputPath);
-
     // Cleanup
     fs.unlinkSync(inputPath);
     fs.unlinkSync(outputPath);
@@ -464,4 +490,4 @@ const updateBufferToDrive = async (bufferData, filename) => {
     }
 }
 
-export { startTtsWorker, generateAudioBufferAndSaveThroughLlm }
+export { startTtsWorker, generateAudioBufferAndSaveThroughLlm,autoTtsWorker }
