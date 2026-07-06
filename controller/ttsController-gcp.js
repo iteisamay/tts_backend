@@ -1049,7 +1049,7 @@ const storeInMechine = async (req, res) => {
     const duration = formatToISODuration(audioMetadata.format.duration);
     // const nextId = await getNextVal();
     // const nextTtsId = `TTS${nextId}`;
-    const hashedId = generatePublicToken();
+    const hashedId = generatePublicToken('-2');
     const QR_LINK = `${process.env.USER_PORTAL}/audio/${hashedId}`;
     const qrBuffer = await generateCmykQr(QR_LINK);
     let { fileName } = await saveQRImage(qrBuffer, title.substring(0, 50));
