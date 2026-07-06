@@ -141,15 +141,16 @@ function autoTtsWorker() {
     console.log("Auto generation worker started");
     cron.schedule('30 5 * * *', async() => {
     // cron.schedule('*/5 * * * *', async() => {
-        console.log("5 min cron running...");
+        console.log("Auto Cron running on 5:30 AM Daily");
         const updateQ=`update tbl_tts_record 
-         set tts_generated='SET FOR GENERATION',generate_proc='AUTO' where tts_generated='NO'`;
+         set tts_generated='SET FOR GENERATION',generate_proc='AUTO' where tts_generated='NEED TO CREATE'`;
 
          await pgClient.query(updateQ);
     });
     
 }
 
+//used for generate audio
 async function generateAudioBufferAndSaveThroughLlm() {
     const getNonGeneratedData = `
     select tts_id, tts_text, llm_name,lang_id 

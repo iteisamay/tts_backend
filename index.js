@@ -9,8 +9,8 @@ import { execa } from "execa";
 import {startTtsWorker,generateAudioBufferAndSaveThroughLlm,autoTtsWorker} from  "./utils/cronJobs.js"
 
 configDotenv();
-startTtsWorker();
-// autoTtsWorker();
+// startTtsWorker();
+autoTtsWorker();
 generateAudioBufferAndSaveThroughLlm();
 const PORT = process.env.PORT || 3000;
 
