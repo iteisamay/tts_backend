@@ -1,4 +1,5 @@
 import pgClient from '../db/pgClient.js';
+import createAdminLog from '../utils/logWriter.js';
 const accessColName='access_modification';
 /**
 * Assigns line item type
@@ -19,6 +20,7 @@ const verifyAction = async (req, res, next) => {
             return res.status(400).send({ msg: "Invalid user or action." });
         }
         if (rows[0][colName] == "YES") {
+            createAdminLog(`PATH: ${req.path}`,"SYSTEM");
             next();
         }
         else{
