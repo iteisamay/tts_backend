@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import createAdminLog from './logWriter';
+import createAdminLog from './logWriter.js';
 
 function generatePublicToken(tts_id=-1) {
   const qr_code=crypto.randomBytes(24).toString('base64url');
