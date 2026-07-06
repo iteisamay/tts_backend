@@ -365,7 +365,7 @@ async function generateWithElevenLabsV2(text, lang_id) {
     const MAX_CHARS = 1000;
     const CONCURRENCY = 3;
 
-    const chunks = splitTextByDanda(text, MAX_CHARS);
+    const chunks = splitTextBySentence(text, MAX_CHARS);
     const limit = pLimit(CONCURRENCY);
     console.log(lang_id, voiceId[lang_id]);
     const audioBuffers = await Promise.all(
