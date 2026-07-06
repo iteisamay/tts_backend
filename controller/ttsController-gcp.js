@@ -160,7 +160,7 @@ const createTts_forFirst = async (req, res) => {
     const tts_id = `TTS${nextId}`;
 
     const default_audio = DEFAULT_FILE_NAME;
-    const public_token = generatePublicToken();
+    const public_token = generatePublicToken(tts_id);
     const QR_LINK = `${process.env.USER_PORTAL}/audio/${public_token}`;
     const qrBuffer = await generateCmykQr(QR_LINK);
     let { fileName } = await saveQRImage(qrBuffer, title.substring(0, 50));

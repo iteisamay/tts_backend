@@ -10,7 +10,7 @@ import {startTtsWorker,generateAudioBufferAndSaveThroughLlm,autoTtsWorker} from 
 
 configDotenv();
 startTtsWorker();
-autoTtsWorker();
+// autoTtsWorker();
 generateAudioBufferAndSaveThroughLlm();
 const PORT = process.env.PORT || 3000;
 
@@ -41,8 +41,8 @@ const test2 = async () => {
   console.log(stdout);
 };
 
-// test1();
-// test2();
+test1();
+test2();
 
 
 

@@ -139,8 +139,8 @@ async function startTtsWorker() {
 
 function autoTtsWorker() {
     console.log("Auto generation worker started");
-    // cron.schedule('30 5 * * *', async() => {
-    cron.schedule('*/5 * * * *', async() => {
+    cron.schedule('30 5 * * *', async() => {
+    // cron.schedule('*/5 * * * *', async() => {
         console.log("5 min cron running...");
         const updateQ=`update tbl_tts_record 
          set tts_generated='SET FOR GENERATION',generate_proc='AUTO' where tts_generated='NO'`;
@@ -160,7 +160,7 @@ async function generateAudioBufferAndSaveThroughLlm() {
   `;
 
     while (true) {
-        console.log("Audio  Generation started.");
+        console.log("Audio Generation started.");
         const { rows, rowCount } =
             await pgClient.query(getNonGeneratedData);
 
@@ -417,19 +417,53 @@ async function generateWithElevenLabsV2(text, lang_id) {
 
 
 
-function splitTextByDanda(text, maxChars = 1000) {
+// function splitTextByDanda(text, maxChars = 1000) {
+//     if (!text) return [];
+//     const sentences = text.split("।")
+//         .map(s => s.trim())
+//         .filter(Boolean);
+
+//     const chunks = [];
+//     let currentChunk = "";
+
+//     for (let i = 0; i < sentences.length; i++) {
+//         const sentence = sentences[i] + "।"; // add back danda
+
+//         // If adding this sentence exceeds limit → push current chunk
+//         if ((currentChunk + " " + sentence).trim().length > maxChars) {
+//             if (currentChunk.trim()) {
+//                 chunks.push(currentChunk.trim());
+//                 currentChunk = sentence;
+//             } else {
+//                 // Edge case: single sentence longer than maxChars
+//                 chunks.push(sentence.slice(0, maxChars));
+//                 currentChunk = sentence.slice(maxChars);
+//             }
+//         } else {
+//             currentChunk = currentChunk
+//                 ? currentChunk + " " + sentence
+//                 : sentence;
+//         }
+//     }
+
+//     if (currentChunk.trim()) {
+//         chunks.push(currentChunk.trim());
+//     }
+
+//     return chunks;
+// }
+function splitTextBySentence(text, maxChars = 1000) {
     if (!text) return [];
-    const sentences = text.split("।")
-        .map(s => s.trim())
-        .filter(Boolean);
+
+    // Match sentences ending with either । or .
+    const sentences = text.match(/[^।.]+[।.]?/g)
+        ?.map(s => s.trim())
+        .filter(Boolean) || [];
 
     const chunks = [];
     let currentChunk = "";
 
-    for (let i = 0; i < sentences.length; i++) {
-        const sentence = sentences[i] + "।"; // add back danda
-
-        // If adding this sentence exceeds limit → push current chunk
+    for (const sentence of sentences) {
         if ((currentChunk + " " + sentence).trim().length > maxChars) {
             if (currentChunk.trim()) {
                 chunks.push(currentChunk.trim());
